@@ -396,3 +396,26 @@ CANCELLED -> FAILED
 7. как защищён поздний progress update;
 8. какие regression tests добавлены;
 9. результаты тестов;
+
+## Prompt 6
+Исправь race condition и утечку WebSocket-подписок, обнаруженную при code review.
+
+Проблема находится в логике обработки `SUBSCRIBE` около `TaskWebSocketHandler.java`: WebSocket получает `SUBSCRIBE`, асинхронно вызывается `getTask.get(...)`, соединение закрывается до завершения Future, `closeHandler` удаляет connection и subscriptions, а поздний success callback вызывает `registry.subscribe(connection, taskId)` и повторно добавляет уже закрытое соединение в registry.
+
+Основной invariant: после закрытия WebSocket connection система никогда не должна позволять снова зарегистрировать это соединение, подписать его на task, добавить его в `taskId -> connections` или отправлять ему события. Закрытое/удалённое соединение является терминальным состоянием lifecycle, поздний asynchronous callback не должен "воскресить" connection.
+
+Изучи текущую реализацию `TaskWebSocketHandler`, `WebSocketSubscriptionManager`/registry, регистрацию connection, `SUBSCRIBE`, `UNSUBSCRIBE`, `closeHandler`, `exceptionHandler`, cleanup, коллекции, модель конкурентности/event-loop и существующие WebSocket-тесты. Не предполагай устройство registry заранее — установи точную причину race condition.
+
+Исправь сценарий `SUBSCRIBE -> getTask.get(...)`: если connection активен — выполнить subscribe, если уже closed/unregistered — ничего не подписывать. Не ограничивайся только `socket.isClosed()` как единственной защитой; основной источник истины lifecycle должен быть в registry, а проверка и регистрация subscription должны быть одной логически атомарной операцией. После `unregisterConnection(connection)` операция `subscribe(connection, taskId)` должна безопасно ничего не делать или возвращать результат, что connection уже не зарегистрирован. Не создавай connection автоматически внутри `subscribe`, если он был удалён после close.
+
+Success callback после `getTask.get(...)` должен учитывать, что socket мог закрыться или connection мог быть unregister. Если connection больше не активен: не создавать subscription, не отправлять `SUBSCRIBED`, не отправлять current task state, не возвращать connection в registry. Failure callback после закрытия не должен пытаться отправлять `ERROR` в закрытый connection.
+
+Убедись, что `UNSUBSCRIBE` остаётся безопасным/idempotent. После закрытия connection должны быть удалены все связи `connection -> clientId`, `connection -> taskIds`, `taskId -> connection`, а пустые task collections не должны накапливаться. `publish(...)` не должен пытаться отправлять событие connection, который уже был unregister; при неожиданном закрытии socket во время публикации cleanup должен оставаться корректным.
+
+Добавь regression tests: основной race `SUBSCRIBE -> pending Future -> CLOSE -> Future success`; нормальная подписка; закрытие после subscription; несколько task subscriptions на одном connection; несколько connections на одном task с сохранением второй подписки после закрытия первой; client isolation не должен ослабляться.
+
+Используй существующий SLF4J logging подход; DEBUG допустим для register/subscribe/unsubscribe/cleanup/игнорирования позднего callback, без INFO на каждый WebSocket event и без WARN для ожидаемой late callback race.
+
+Границы изменений: исправить именно lifecycle WebSocket subscriptions и связанную race condition; не менять REST API, PostgreSQL, schema, AI execution, state machine задач, frontend, WebSocket protocol, формат событий; не добавлять framework/infrastructure; не реализовывать heartbeat или ограничение размера message. Если меняются публичные backend API, сохранить Javadoc на русском языке согласно `task.md`.
+
+После реализации выполнить unit tests registry, WebSocket handler tests, WebSocket integration tests, существующие backend tests и backend build. Git commit самостоятельно не выполнять. В конце показать точную причину race condition, последовательность утечки, новый lifecycle, invariant registry, изменённые файлы, regression tests, результат основного race-теста, результаты тестов и backend build.

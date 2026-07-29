@@ -6,6 +6,7 @@ import ru.spb.aiagent.web.mapper.JsonMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.vertx.core.Future;
 import io.vertx.core.http.ServerWebSocket;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -28,28 +29,60 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
     private final ObjectMapper json = JsonMapper.create();
 
     /**
-     * Регистрирует новое соединение клиента.
+     * Регистрирует новое соединение клиента, если socket ещё открыт.
+     *
+     * @param socket WebSocket-соединение
+     * @param clientId идентификатор клиента
+     * @return true, если соединение зарегистрировано
      */
-    public void register(ServerWebSocket socket, String clientId) {
+    public synchronized boolean register(ServerWebSocket socket, String clientId) {
+        if (socket.isClosed()) {
+            log.debug("Skip closed WebSocket registration: clientId={}", clientId);
+            return false;
+        }
         log.debug("Register WebSocket connection: clientId={}", clientId);
         clients.put(socket, clientId);
         bySocket.put(socket, ConcurrentHashMap.newKeySet());
         socket.closeHandler(v -> unregister(socket));
+        return true;
     }
 
     /**
-     * Добавляет подписку idempotent-образом.
+     * Добавляет подписку idempotent-образом только для активного зарегистрированного соединения.
+     *
+     * <p>Проверка активности и добавление подписки выполняются как одна операция registry:
+     * поздний callback после {@link #unregister(ServerWebSocket)} не может создать записи
+     * {@code connection -> taskIds} или {@code taskId -> connection} заново.
+     *
+     * @param socket WebSocket-соединение
+     * @param taskId идентификатор задачи
+     * @return true, если подписка существует после вызова
      */
-    public void subscribe(ServerWebSocket socket, UUID taskId) {
-        log.debug("Add WebSocket subscription: clientId={}, taskId={}", clients.get(socket), taskId);
-        bySocket.computeIfAbsent(socket, s -> ConcurrentHashMap.newKeySet()).add(taskId);
+    public synchronized boolean subscribe(ServerWebSocket socket, UUID taskId) {
+        String clientId = clients.get(socket);
+        Set<UUID> tasks = bySocket.get(socket);
+        if (clientId == null || tasks == null) {
+            log.debug("Skipping WebSocket subscription because connection is no longer active: taskId={}", taskId);
+            return false;
+        }
+        if (socket.isClosed()) {
+            log.debug("Skipping WebSocket subscription because socket is closed: clientId={}, taskId={}", clientId, taskId);
+            removeConnection(socket);
+            return false;
+        }
+        log.debug("Add WebSocket subscription: clientId={}, taskId={}", clientId, taskId);
+        tasks.add(taskId);
         byTask.computeIfAbsent(taskId, id -> ConcurrentHashMap.newKeySet()).add(socket);
+        return true;
     }
 
     /**
-     * Удаляет подписку.
+     * Удаляет подписку. Повторный вызов для той же пары socket/task безопасен.
+     *
+     * @param socket WebSocket-соединение
+     * @param taskId идентификатор задачи
      */
-    public void unsubscribe(ServerWebSocket socket, UUID taskId) {
+    public synchronized void unsubscribe(ServerWebSocket socket, UUID taskId) {
         log.debug("Remove WebSocket subscription: clientId={}, taskId={}", clients.get(socket), taskId);
         Set<UUID> tasks = bySocket.get(socket);
         if (tasks != null) {
@@ -58,17 +91,34 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
         Set<ServerWebSocket> sockets = byTask.get(taskId);
         if (sockets != null) {
             sockets.remove(socket);
+            if (sockets.isEmpty()) {
+                byTask.remove(taskId);
+            }
         }
     }
 
     /**
      * Удаляет все подписки соединения.
+     *
+     * @param socket WebSocket-соединение
      */
-    public void unregister(ServerWebSocket socket) {
+    public synchronized void unregister(ServerWebSocket socket) {
+        removeConnection(socket);
+    }
+
+    private void removeConnection(ServerWebSocket socket) {
         String clientId = clients.get(socket);
         Set<UUID> tasks = bySocket.remove(socket);
         if (tasks != null) {
-            tasks.forEach(taskId -> unsubscribe(socket, taskId));
+            tasks.forEach(taskId -> {
+                Set<ServerWebSocket> sockets = byTask.get(taskId);
+                if (sockets != null) {
+                    sockets.remove(socket);
+                    if (sockets.isEmpty()) {
+                        byTask.remove(taskId);
+                    }
+                }
+            });
         }
         clients.remove(socket);
         log.debug("Unregistered WebSocket connection and cleaned subscriptions: clientId={}, subscriptionCount={}",
@@ -79,38 +129,82 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
      * Закрывает все активные соединения при shutdown.
      */
     public void closeAll() {
-        log.info("Closing WebSocket connections: count={}", clients.size());
-        clients.keySet().forEach(ServerWebSocket::close);
-        clients.clear();
-        byTask.clear();
-        bySocket.clear();
+        Set<ServerWebSocket> sockets;
+        synchronized (this) {
+            log.info("Closing WebSocket connections: count={}", clients.size());
+            sockets = new HashSet<>(clients.keySet());
+            clients.clear();
+            byTask.clear();
+            bySocket.clear();
+        }
+        sockets.forEach(ServerWebSocket::close);
     }
 
     /**
-     * Публикует событие всем подписчикам задачи с backpressure-проверкой.
+     * Публикует событие всем активным подписчикам задачи с backpressure-проверкой.
      */
     @Override
     public Future<Void> publish(String type, Task task) {
-        Set<ServerWebSocket> sockets = byTask.getOrDefault(task.id(), Set.of());
+        Set<ServerWebSocket> sockets;
+        synchronized (this) {
+            sockets = new HashSet<>(byTask.getOrDefault(task.id(), Set.of()));
+            sockets.removeIf(socket -> !clients.containsKey(socket));
+        }
         log.debug("Publishing WebSocket task event: type={}, taskId={}, subscriberCount={}", type, task.id(), sockets.size());
         sockets.forEach(socket -> send(socket, Map.of("type", type, "task", task)));
         return Future.succeededFuture();
     }
 
     /**
-     * Отправляет одно сообщение, если write queue не переполнена.
+     * Отправляет одно сообщение активному соединению, если write queue не переполнена.
+     *
+     * @param socket WebSocket-соединение
+     * @param message сообщение, сериализуемое в JSON
      */
-    public void send(ServerWebSocket socket, Object message) {
+    public synchronized void send(ServerWebSocket socket, Object message) {
         try {
+            if (!isActive(socket)) {
+                log.debug("Skip WebSocket send because connection is no longer active");
+                return;
+            }
             if (socket.writeQueueFull()) {
                 log.warn("WebSocket write queue full, closing slow client: clientId={}", clients.get(socket));
                 socket.close();
+                unregister(socket);
                 return;
             }
             socket.writeTextMessage(json.writeValueAsString(message));
         } catch (Exception e) {
             log.warn("Failed to send WebSocket message, closing connection: clientId={}", clients.get(socket), e);
             socket.close();
+            unregister(socket);
         }
+    }
+
+    /**
+     * Возвращает true, если соединение зарегистрировано в registry и сам socket ещё открыт.
+     *
+     * @param socket WebSocket-соединение
+     * @return признак активного lifecycle-состояния соединения
+     */
+    public synchronized boolean isActive(ServerWebSocket socket) {
+        return clients.containsKey(socket) && bySocket.containsKey(socket) && !socket.isClosed();
+    }
+
+    boolean containsConnection(ServerWebSocket socket) {
+        return clients.containsKey(socket);
+    }
+
+    boolean containsSocketSubscriptions(ServerWebSocket socket) {
+        return bySocket.containsKey(socket);
+    }
+
+    boolean hasSubscription(ServerWebSocket socket, UUID taskId) {
+        Set<ServerWebSocket> sockets = byTask.get(taskId);
+        return sockets != null && sockets.contains(socket);
+    }
+
+    int subscriberCount(UUID taskId) {
+        return byTask.getOrDefault(taskId, Set.of()).size();
     }
 }

@@ -51,20 +51,32 @@ public class TaskWebSocketHandler implements io.vertx.core.Handler<RoutingContex
                 });
     }
 
-    private void bind(ServerWebSocket ws, String clientId) {
+    void bind(ServerWebSocket ws, String clientId) {
         log.debug("WebSocket connection established: clientId={}, remoteAddress={}", clientId, ws.remoteAddress());
-        registry.register(ws, clientId);
+        if (!registry.register(ws, clientId)) {
+            return;
+        }
         ws.exceptionHandler(error -> log.warn("Unexpected WebSocket error: clientId={}, remoteAddress={}", clientId, ws.remoteAddress(), error));
         ws.textMessageHandler(raw -> {
             try {
                 WebSocketMessageParser.ClientMessage message = parser.parse(raw);
                 switch (message.action()) {
                     case "SUBSCRIBE" -> getTask.get(clientId, message.taskId()).onSuccess(task -> {
-                        log.debug("WebSocket subscribe: clientId={}, taskId={}", clientId, task.id());
-                        registry.subscribe(ws, task.id());
+                        if (!registry.subscribe(ws, task.id())) {
+                            log.debug("Skipping WebSocket subscribe callback because connection is no longer active: clientId={}, taskId={}",
+                                    clientId, task.id());
+                            return;
+                        }
+                        log.debug("WebSocket subscribe completed: clientId={}, taskId={}", clientId, task.id());
                         registry.send(ws, Map.of("type", "SUBSCRIBED", "taskId", task.id(), "task", task));
                     }).onFailure(error -> {
-                        log.warn("WebSocket subscribe rejected: clientId={}, taskId={}, reason={}", clientId, message.taskId(), error.getMessage());
+                        if (!registry.isActive(ws)) {
+                            log.debug("Skipping WebSocket subscribe error because connection is no longer active: clientId={}, taskId={}",
+                                    clientId, message.taskId());
+                            return;
+                        }
+                        log.warn("WebSocket subscribe rejected: clientId={}, taskId={}, reason={}", clientId, message.taskId(),
+                                error.getMessage());
                         registry.send(ws, Map.of("type", "ERROR", "message", error.getMessage()));
                     });
                     case "UNSUBSCRIBE" -> {
