@@ -1,33 +1,30 @@
 package ru.spb.aiagent;
 
-import ru.spb.aiagent.web.websocket.HeartbeatService;
-import ru.spb.aiagent.web.websocket.WebSocketSubscriptionRegistry;
 import io.vertx.core.Vertx;
-import io.vertx.sqlclient.Pool;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Graceful shutdown manager: закрывает WebSocket, timers, PgPool и Vert.x.
+ * Graceful shutdown manager: регистрирует JVM hook и закрывает Vert.x.
+ *
+ * <p>При закрытии Vert.x платформа undeploy всех verticle. Поэтому ресурсы приложения
+ * освобождаются в {@link MainVerticle#stop(io.vertx.core.Promise)}, а этот класс остаётся
+ * только адаптером между JVM shutdown hook и lifecycle Vert.x.
  */
 public class ShutdownManager {
     private static final Logger log = LoggerFactory.getLogger(ShutdownManager.class);
 
     private final Vertx vertx;
-    private final Pool pool;
-    private final WebSocketSubscriptionRegistry registry;
-    private final HeartbeatService heartbeat;
 
     /**
      * Создаёт manager shutdown.
+     *
+     * @param vertx Vert.x instance приложения
      */
-    public ShutdownManager(Vertx vertx, Pool pool, WebSocketSubscriptionRegistry registry, HeartbeatService heartbeat) {
+    public ShutdownManager(Vertx vertx) {
         this.vertx = vertx;
-        this.pool = pool;
-        this.registry = registry;
-        this.heartbeat = heartbeat;
     }
 
     /**
@@ -38,29 +35,15 @@ public class ShutdownManager {
     }
 
     /**
-     * Выполняет закрытие ресурсов.
+     * Выполняет graceful shutdown через закрытие Vert.x.
      */
     public void shutdown() {
         CountDownLatch shutdownCompleted = new CountDownLatch(1);
         log.info("Graceful shutdown initiated");
-        log.info("Stopping heartbeat and AI timers");
-        heartbeat.stop();
-        log.info("Closing WebSocket connections");
-        registry.closeAll();
-        log.info("Closing PostgreSQL pool");
-        pool.close()
-                .onSuccess(v -> {
-                    log.info("PostgreSQL pool closed");
-                    log.info("Stopping Vert.x");
-                    vertx.close()
-                            .onSuccess(done -> log.info("Graceful shutdown completed"))
-                            .onFailure(error -> log.error("Failed to stop Vert.x during graceful shutdown", error))
-                            .onComplete(done -> shutdownCompleted.countDown());
-                })
-                .onFailure(error -> {
-                    log.error("Failed to close PostgreSQL pool during graceful shutdown", error);
-                    shutdownCompleted.countDown();
-                });
+        vertx.close()
+                .onSuccess(done -> log.info("Graceful shutdown completed"))
+                .onFailure(error -> log.error("Failed to stop Vert.x during graceful shutdown", error))
+                .onComplete(done -> shutdownCompleted.countDown());
         awaitShutdown(shutdownCompleted);
     }
 

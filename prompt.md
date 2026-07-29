@@ -438,7 +438,7 @@ HTTP `BodyHandler` не решает эту проблему, потому чт�
 
 Сначала изучи текущую реализацию: `TaskWebSocketHandler`, создание HTTP/WebSocket server, `HttpServerOptions`, настройки Vert.x WebSocket, обработку text frames/messages, JSON parsing, WebSocket error handling, конфигурацию приложения и существующие WebSocket-тесты. Определи, можно ли ограничить размер сообщения средствами используемой версии Vert.x до передачи payload в application handler. Используй API именно той версии Vert.x, которая подключена в проекте.
 
-Требуемый лимит: ориентир `8192 bytes`. Предпочтительно сделать лимит конфигурируемым через `WEBSOCKET_MAX_MESSAGE_SIZE_BYTES=8192`, добавить default, `.env.example` и README. Ограничивать размер нужно как можно раньше средствами Vert.x HTTP/WebSocket server configuration. Даже при server-level limit оцени необходимость дополнительной проверки перед Jackson. Лимит считать в байтах, не в `String.length()`.
+Требуемый лимит: ориентир `8192 bytes`. Предпочтительно сделать лимит конфигурируемым через `WEBSOCKET_MAX_MESSAGE_SIZE_BYTES=8192`, добавить default, `.env` и README. Ограничивать размер нужно как можно раньше средствами Vert.x HTTP/WebSocket server configuration. Даже при server-level limit оцени необходимость дополнительной проверки перед Jackson. Лимит считать в байтах, не в `String.length()`.
 
 При превышении лимита oversized payload не должен передаваться в Jackson, use case не должен вызываться, subscription не должна создаваться, состояние приложения не должно меняться. Предпочтительно закрыть соединение корректным WebSocket close code. Не логировать payload, prompt, result или весь JSON.
 
@@ -447,3 +447,57 @@ HTTP `BodyHandler` не решает эту проблему, потому чт�
 Не менять REST prompt limit `PROMPT_MAX_LENGTH = 4000`, не ограничивать исходящие события тем же значением, не смешивать с другими review fixes. Если добавляются или изменяются публичные backend-классы, интерфейсы или нетривиальные публичные методы, соблюдай требования `task.md` к Javadoc на русском языке.
 
 После реализации выполни WebSocket unit/integration tests, существующие backend tests и backend build. Git commit самостоятельно не выполнять. В конце покажи: где отсутствовало ограничение; какой лимит выбран и почему; на каком уровне Vert.x он применяется; есть ли дополнительная handler-level защита; что происходит при превышении лимита; какие файлы изменены; какие regression tests добавлены; подтверждение, что Jackson/use case не вызываются для oversized message; результаты тестов; результат backend build.
+
+## Prompt 8
+Проанализируй backend-проект и оцени, нужно ли выделить отдельный Vert.x verticle для управления жизненным циклом HTTP-сервера и инфраструктурных ресурсов.
+
+Сначала изучи текущий запуск приложения: `Main`, `ApplicationBootstrap`, `ShutdownManager`, `VertxFactory`, `RouterFactory`, создание `HttpServer`, запуск Liquibase, создание `PgPool`, сборку repository/use cases/REST/WebSocket handlers, heartbeat и graceful shutdown. Определи, есть ли уже централизованное lifecycle-управление и как оно работает.
+
+Если lifecycle уже реализован достаточно явно, не добавляй новый класс и объясни существующую схему запуска и остановки. Если управление размазано между bootstrap и shutdown-кодом или есть риск некорректного startup/shutdown поведения, добавь `MainVerticle extends AbstractVerticle` как основной владелец backend-инфраструктуры.
+
+При добавлении `MainVerticle` соблюдай порядок запуска:
+
+1. залогировать начало startup и безопасные параметры конфигурации;
+2. выполнить Liquibase migrations вне event loop через Vert.x blocking API;
+3. создать PostgreSQL reactive `Pool`;
+4. создать WebSocket subscription registry и heartbeat service;
+5. собрать repository, use cases, REST handler и WebSocket handler без изменения бизнес-логики;
+6. создать router через существующий `RouterFactory`;
+7. создать `HttpServerOptions` с текущим лимитом `websocketMaxMessageSizeBytes`;
+8. запустить HTTP server и завершить `startPromise` только после успешного bind;
+9. при ошибке startup закрыть уже созданные ресурсы и передать ошибку в deploy Vert.x.
+
+Реализуй остановку в `MainVerticle.stop(...)` в обратном порядке:
+
+1. закрыть HTTP server;
+2. остановить heartbeat;
+3. закрыть WebSocket connections;
+4. закрыть PostgreSQL pool.
+
+Закрытие должно быть idempotent и безопасным, если часть ресурсов не успела создаться из-за ошибки startup.
+
+Обнови `ApplicationBootstrap` так, чтобы он отвечал только за внешний bootstrap:
+
+1. создать Vert.x;
+2. deploy `MainVerticle`;
+3. дождаться результата deploy с fail-fast поведением;
+4. закрыть Vert.x при ошибке;
+5. зарегистрировать `ShutdownManager` после успешного deploy.
+
+Не дублируй в `ApplicationBootstrap` сборку repository/use cases/router/server.
+
+Обнови `ShutdownManager` так, чтобы он был адаптером между JVM shutdown hook и Vert.x lifecycle: при shutdown закрывать Vert.x. Ресурсы приложения должны освобождаться через `MainVerticle.stop(...)`, который Vert.x вызовет при закрытии.
+
+Не меняй REST API, WebSocket protocol, PostgreSQL schema, бизнес-логику задач, frontend и существующий `RouterFactory` как точку сборки маршрутов. Если добавляются или меняются публичные backend-классы и нетривиальные публичные методы, сохрани Javadoc на русском языке.
+
+После изменений выполни backend tests и `gradlew check`. Git commit самостоятельно не выполняй.
+
+В конце покажи:
+
+1. было ли lifecycle-управление до изменений;
+2. почему добавлен `MainVerticle`;
+3. чем отличается `ApplicationBootstrap.start(...)` от `MainVerticle.start(...)`;
+4. какие файлы изменены;
+5. какой порядок startup/shutdown получился;
+6. какие проверки выполнены;
+7. есть ли сторонние изменения в рабочем дереве, которые не относятся к задаче.
