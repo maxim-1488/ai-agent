@@ -1,5 +1,6 @@
 package ru.spb.aiagent.web.exception;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import ru.spb.aiagent.domain.exception.InvalidProgressException;
 import ru.spb.aiagent.domain.exception.InvalidTaskStateException;
 import ru.spb.aiagent.domain.exception.TaskConflictException;
@@ -13,7 +14,7 @@ public class DomainToHttpErrorMapper {
      * Возвращает HTTP status.
      */
     public int status(Throwable error) {
-        if (error instanceof IllegalArgumentException || error instanceof InvalidProgressException) {
+        if (error instanceof IllegalArgumentException || error instanceof InvalidProgressException || error instanceof JsonProcessingException) {
             return 400;
         }
         if (error instanceof TaskNotFoundException) {
@@ -21,6 +22,9 @@ public class DomainToHttpErrorMapper {
         }
         if (error instanceof TaskConflictException || error instanceof InvalidTaskStateException) {
             return 409;
+        }
+        if (error.getMessage() != null && error.getMessage().startsWith("CORS Rejected")) {
+            return 403;
         }
         return 500;
     }

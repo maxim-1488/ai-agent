@@ -2,10 +2,9 @@ package ru.spb.aiagent.web.exception;
 
 import io.vertx.ext.web.RoutingContext;
 import java.util.UUID;
-import org.slf4j.MDC;
 
 /**
- * REST handler, который проставляет correlation id в response header и MDC.
+ * REST handler, который проставляет correlation id в RoutingContext и response header.
  */
 public class CorrelationIdHandler implements io.vertx.core.Handler<RoutingContext> {
     /**
@@ -19,8 +18,6 @@ public class CorrelationIdHandler implements io.vertx.core.Handler<RoutingContex
         }
         ctx.put(CorrelationId.KEY, id);
         ctx.response().putHeader(CorrelationId.HEADER, id);
-        MDC.put(CorrelationId.KEY, id);
-        ctx.addEndHandler(v -> MDC.remove(CorrelationId.KEY));
         ctx.next();
     }
 }

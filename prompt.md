@@ -1,4 +1,8 @@
-1. Изучи файл task.md в корне проекта.
+## Prompt 0
+Изучи файл с тестовым задание и составь задачу на реалзицаию проекта Агента ИИ Java 21 + Vert.x 
+
+## Prompt 1
+Изучи файл task.md в корне проекта.
 Составь план реализации проекта строго на его основе.
 Важно:
 •
@@ -31,10 +35,7 @@ frontend — React + TypeScript;
 каждый оригинальный промт нужно добавить последовательно в файл prompt.md
 После составления плана остановись и ничего не реализуй.
 
-2. 
-
-## Prompt 2 — 2026-07-28
-
+## Prompt 2
 Реализуй проект полностью в соответствии с составленным планом PLAN.md.
 Не отклоняйся от плана и реализуй все пункты плана по порядку
 Не упрощай требования PLAN.md и не откладывай обязательные части на будущие этапы.
@@ -53,3 +54,56 @@ frontend — React + TypeScript;
 Не проводи дополнительный архитектурный рефакторинг и code review после получения работающей версии — это будет отдельный следующий этап.
 
 Не выполняй git commit самостоятельно.
+
+## Prompt 3
+Изучи текущую реализацию backend проекта и требования `task.md` и PLAN.md.
+
+Необходимо провести аудит существующего логирования и при необходимости добавить полноценное, но умеренное логирование backend.
+
+Используй SLF4J API и Logback как реализацию логирования. Не добавляй логирование механически во все методы. Логирование должно помогать понимать жизненный цикл приложения, выполнение AI-задач, ошибки, проблемные запросы, WebSocket-соединения, PostgreSQL и graceful shutdown, но не создавать excessive log noise.
+
+Сначала проведи аудит:
+
+1. используется ли сейчас SLF4J;
+2. присутствует ли `logback.xml`;
+3. какие классы уже используют логирование;
+4. где сейчас ошибки теряются или остаются без логирования;
+5. где логирование действительно необходимо;
+6. где добавление логирования будет избыточным;
+7. реализован ли correlation ID;
+8. попадает ли correlation ID в логи;
+9. не логируются ли чувствительные или слишком большие данные.
+
+Используй стандартный SLF4J `LoggerFactory.getLogger(CurrentClass.class)`. Не добавляй Lombok и отдельный logging framework.
+
+Уровни: INFO только для значимых событий lifecycle и бизнес-процесса; WARN для неф JSON / unknown WebSocket action / optimistic conflicts / повторной отмены / таймаутов / backpressure; ERROR для неожиданных ошибок миграций, startup, PostgreSQL, AI client, graceful shutdown и async chain; DEBUG для технических деталей use cases, repository operations, progress и WebSocket subscribe/unsubscribe/cleanup.
+
+Startup должен логировать загрузку конфигурации, Liquibase, migrations, PostgreSQL pool, HTTP server, фактический порт и готовность. Shutdown должен логировать начало graceful shutdown, остановку HTTP/WebSocket/AI timers, закрытие PgPool и завершение.
+
+AI task lifecycle должен позволять восстановить последовательность событий: created, started, completed, cancelled, failed. Включать `taskId`, `clientId`, `status`, `correlationId`, если это безопасно и оправданно. Не логировать полный prompt и полный AI result; допускается prompt length.
+
+Progress не логировать на INFO. REST не логировать каждый request на INFO. Correlation ID должен приниматься из текущего механизма или генерироваться, попадать в error response и соответствующие логи. Перед использованием MDC оценить Vert.x: ThreadLocal-контекст нельзя считать автоматически безопасным для всей async chain; не добавлять наивную MDC-реализацию, которая может смешивать IDs.
+
+PostgreSQL: не логировать каждый SQL на INFO и не логировать SQL parameters с пользовательскими данными. DEBUG — repository operation, taskId, affected rows; WARN — optimistic update 0 rows / version conflict / invalid transition; ERROR — unexpected SQL/database error, если не залогировано выше.
+
+WebSocket: DEBUG для established/subscribe/unsubscribe/cleanup/normal close; WARN для malformed message, unknown action, попытки подписки на чужую задачу, slow client, write queue overflow, unexpected close. Не логировать каждое outgoing `TASK_PROGRESS` на INFO.
+
+Mock AI: INFO для начала и terminal state completed/failed/cancelled/timeout; DEBUG для внутренних шагов при необходимости. Не логировать каждое timer срабатывание на INFO.
+
+Error handling: избежать дублирования одного exception на Repository/Service/UseCase/Controller/GlobalErrorHandler. Ожидаемые бизнес-ошибки не логировать как ERROR.
+
+Настрой `logback.xml`, если текущая конфигурация недостаточна. Console appender, формат с timestamp, level, thread/event-loop, logger, correlationId, message. Не добавлять JSON/ELK/extra appenders.
+
+Запрещено логировать `DATABASE_PASSWORD`, credentials, secrets, полный prompt, полный AI result, stack trace в HTTP response, SQL parameters с пользовательским текстом, environment variables целиком.
+
+Не создавать `LoggingService`. Domain не должен зависеть от SLF4J. Основные точки логирования — application, infrastructure, web, bootstrap/configuration.
+
+Тестирование: не добавлять unit tests на текст log message. Проверить correlation ID в error response, request lifecycle, async behavior, centralized error handler, startup/shutdown.
+
+Регрессия: не менять REST contracts, WebSocket protocol, PostgreSQL schema, бизнес-логику, state machine, frontend, Docker API и существующее поведение приложения. Основная задача — observability.
+
+Перед внесением изменений добавь этот оригинальный промт следующей записью в `prompt.md`. Не изменяй предыдущие промты.
+
+После изменений выполни backend build, unit tests, integration tests, startup приложения, successful lifecycle, FAILED, CANCELLED, timeout, correlation ID, graceful shutdown и ручной просмотр логов. Не выполняй Git commit самостоятельно.
+
+В конце покажи: какое логирование было до изменений; найденные проблемы; изменённые классы; где добавлено INFO/WARN/ERROR/DEBUG; как реализован correlation ID; изменялся ли `logback.xml`; как предотвращено избыточное логирование; результаты тестов и сборки; примеры типичных логов без чувствительных данных.
