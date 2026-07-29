@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <changeSet id="003-add-ai-task-indexes" author="codex">
+        <createIndex tableName="ai_task" indexName="idx_ai_task_client_created">
+            <column name="client_id"/>
+            <column name="created_at"/>
+        </createIndex>
+        <createIndex tableName="task_event" indexName="idx_task_event_task_created">
+            <column name="task_id"/>
+            <column name="created_at"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="task_event" indexName="idx_task_event_task_created"/>
+            <dropIndex tableName="ai_task" indexName="idx_ai_task_client_created"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

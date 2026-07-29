@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <changeSet id="002-create-task-event-table" author="codex">
+        <createTable tableName="task_event">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="task_id" type="uuid"><constraints nullable="false" foreignKeyName="fk_task_event_task" references="ai_task(id)"/></column>
+            <column name="client_id" type="varchar(128)"><constraints nullable="false"/></column>
+            <column name="type" type="varchar(64)"><constraints nullable="false"/></column>
+            <column name="payload" type="jsonb"><constraints nullable="false"/></column>
+            <column name="created_at" type="timestamptz"><constraints nullable="false"/></column>
+        </createTable>
+        <rollback><dropTable tableName="task_event"/></rollback>
+    </changeSet>
+</databaseChangeLog>

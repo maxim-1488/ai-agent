@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <changeSet id="001-create-ai-task-table" author="codex">
+        <createTable tableName="ai_task">
+            <column name="id" type="uuid"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="client_id" type="varchar(128)"><constraints nullable="false"/></column>
+            <column name="prompt" type="varchar(4000)"><constraints nullable="false"/></column>
+            <column name="status" type="varchar(32)"><constraints nullable="false"/></column>
+            <column name="progress" type="int"><constraints nullable="false"/></column>
+            <column name="result" type="text"/>
+            <column name="error_message" type="text"/>
+            <column name="created_at" type="timestamptz"><constraints nullable="false"/></column>
+            <column name="started_at" type="timestamptz"/>
+            <column name="completed_at" type="timestamptz"/>
+            <column name="updated_at" type="timestamptz"><constraints nullable="false"/></column>
+            <column name="version" type="bigint"><constraints nullable="false"/></column>
+        </createTable>
+        <sql>
+            ALTER TABLE ai_task ADD CONSTRAINT chk_ai_task_progress CHECK (progress BETWEEN 0 AND 100);
+            ALTER TABLE ai_task ADD CONSTRAINT chk_ai_task_status CHECK (status IN ('CREATED','IN_PROGRESS','COMPLETED','FAILED','CANCELLED','TIMED_OUT'));
+            ALTER TABLE ai_task ADD CONSTRAINT chk_ai_task_client_id CHECK (length(client_id) &gt; 0);
+            ALTER TABLE ai_task ADD CONSTRAINT chk_ai_task_prompt CHECK (length(prompt) &gt; 0);
+        </sql>
+        <rollback><dropTable tableName="ai_task"/></rollback>
+    </changeSet>
+</databaseChangeLog>
