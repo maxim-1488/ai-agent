@@ -19,6 +19,7 @@ import ru.spb.aiagent.web.websocket.HeartbeatService;
 import ru.spb.aiagent.web.websocket.TaskWebSocketHandler;
 import ru.spb.aiagent.web.websocket.WebSocketSubscriptionRegistry;
 import io.vertx.core.Vertx;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.sqlclient.Pool;
 import org.slf4j.Logger;
@@ -35,9 +36,9 @@ public class ApplicationBootstrap {
      */
     public void start(AppConfig config) {
         log.info("Application startup initiated");
-        log.info("Configuration loaded: httpPort={}, databaseHost={}, databasePort={}, databaseName={}, databasePoolSize={}, aiStepDelayMs={}, aiTimeoutMs={}",
+        log.info("Configuration loaded: httpPort={}, databaseHost={}, databasePort={}, databaseName={}, databasePoolSize={}, aiStepDelayMs={}, aiTimeoutMs={}, websocketMaxMessageSizeBytes={}",
                 config.httpPort(), config.databaseHost(), config.databasePort(), config.databaseName(),
-                config.databasePoolSize(), config.aiStepDelayMs(), config.aiTimeoutMs());
+                config.databasePoolSize(), config.aiStepDelayMs(), config.aiTimeoutMs(), config.websocketMaxMessageSizeBytes());
         log.info("Starting Liquibase migrations");
         new LiquibaseMigrator().migrate(config.jdbcUrl(), config.databaseUser(), config.databasePassword());
         log.info("Liquibase migrations completed successfully");
@@ -55,13 +56,17 @@ public class ApplicationBootstrap {
         ListTasksUseCase list = new ListTasksUseCase(repository);
         CancelTaskUseCase cancel = new CancelTaskUseCase(repository, executions, publisher);
         TaskRestHandler rest = new TaskRestHandler(create, get, list, cancel);
-        TaskWebSocketHandler ws = new TaskWebSocketHandler(get, publisher);
+        TaskWebSocketHandler ws = new TaskWebSocketHandler(get, publisher, config.websocketMaxMessageSizeBytes());
         Router router = new RouterFactory().create(vertx, rest, ws);
         HeartbeatService heartbeat = new HeartbeatService(vertx);
         heartbeat.start(() -> { });
         new ShutdownManager(vertx, pool, publisher, heartbeat).register();
-        log.info("Starting HTTP server: requestedPort={}", config.httpPort());
-        vertx.createHttpServer().requestHandler(router).listen(config.httpPort())
+        HttpServerOptions httpServerOptions = new HttpServerOptions()
+                .setMaxWebSocketFrameSize(config.websocketMaxMessageSizeBytes())
+                .setMaxWebSocketMessageSize(config.websocketMaxMessageSizeBytes());
+        log.info("Starting HTTP server: requestedPort={}, websocketMaxMessageSizeBytes={}",
+                config.httpPort(), config.websocketMaxMessageSizeBytes());
+        vertx.createHttpServer(httpServerOptions).requestHandler(router).listen(config.httpPort())
                 .onSuccess(server -> log.info("HTTP server started: actualPort={}; application is ready to accept requests", server.actualPort()))
                 .onFailure(error -> {
                     log.error("Failed to start HTTP server: requestedPort={}", config.httpPort(), error);

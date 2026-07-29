@@ -21,6 +21,7 @@ Backend разделён по гексагональной архитектур�
 - `DATABASE_JDBC_URL` для Liquibase
 - `DATABASE_POOL_SIZE`
 - `AI_STEP_DELAY_MS`, `AI_TIMEOUT_MS`
+- `WEBSOCKET_MAX_MESSAGE_SIZE_BYTES`, default `8192`. Ограничивает входящие WebSocket-сообщения `client -> WebSocket server` в байтах; это не лимит AI prompt.
 
 ## Локальный backend
 
@@ -128,6 +129,9 @@ curl -X POST -H "X-Client-Id: client-123" http://localhost:8080/api/v1/tasks/{ta
 ## WebSocket
 
 Endpoint: `ws://localhost:8080/ws/tasks`, handshake header `X-Client-Id`.
+
+Входящие управляющие сообщения WebSocket ограничены `WEBSOCKET_MAX_MESSAGE_SIZE_BYTES` bytes, default `8192`.
+Лимит применяется к сообщениям от клиента к WebSocket server и не меняет REST/frontend prompt limit.
 
 ```json
 {"action":"SUBSCRIBE","taskId":"uuid"}

@@ -13,7 +13,9 @@ public record AppConfig(
         int databasePoolSize,
         String jdbcUrl,
         int aiStepDelayMs,
-        int aiTimeoutMs) {
+        int aiTimeoutMs,
+        int websocketMaxMessageSizeBytes) {
+    private static final int DEFAULT_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES = 8192;
 
     /**
      * Читает и валидирует конфигурацию из окружения.
@@ -34,7 +36,8 @@ public record AppConfig(
                 intEnv("DATABASE_POOL_SIZE", 10),
                 jdbc,
                 intEnv("AI_STEP_DELAY_MS", 150),
-                intEnv("AI_TIMEOUT_MS", 7000));
+                intEnv("AI_TIMEOUT_MS", 7000),
+                intEnv("WEBSOCKET_MAX_MESSAGE_SIZE_BYTES", DEFAULT_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES));
     }
 
     private static String strEnv(String key, String fallback) {

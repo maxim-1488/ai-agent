@@ -419,3 +419,31 @@ Success callback после `getTask.get(...)` должен учитывать, 
 Границы изменений: исправить именно lifecycle WebSocket subscriptions и связанную race condition; не менять REST API, PostgreSQL, schema, AI execution, state machine задач, frontend, WebSocket protocol, формат событий; не добавлять framework/infrastructure; не реализовывать heartbeat или ограничение размера message. Если меняются публичные backend API, сохранить Javadoc на русском языке согласно `task.md`.
 
 После реализации выполнить unit tests registry, WebSocket handler tests, WebSocket integration tests, существующие backend tests и backend build. Git commit самостоятельно не выполнять. В конце показать точную причину race condition, последовательность утечки, новый lifecycle, invariant registry, изменённые файлы, regression tests, результат основного race-теста, результаты тестов и backend build.
+## Prompt 7
+Исправь проблему отсутствия ограничения размера входящих WebSocket-сообщений, обнаруженную при code review.
+
+Проблема находится в WebSocket-слое backend, в частности около обработки входящих сообщений в:
+
+`TaskWebSocketHandler.java`
+
+Сейчас входящее WebSocket-сообщение может быть передано в Jackson без явного ограничения размера.
+
+HTTP `BodyHandler` не решает эту проблему, потому что WebSocket-сообщения обрабатываются отдельно.
+
+Клиент может подключиться к WebSocket напрямую, минуя React frontend, и отправить очень большой JSON payload.
+
+Это может привести к избыточному потреблению памяти, дорогому JSON parsing, блокировке Vert.x event loop и деградации работы приложения.
+
+Важно: frontend validation является UX-ограничением и не считается защитой backend. WebSocket используется для управляющих сообщений вроде `SUBSCRIBE`, `UNSUBSCRIBE`, `PING`, поэтому допустимый размер входящего WebSocket message может быть значительно меньше лимита REST prompt.
+
+Сначала изучи текущую реализацию: `TaskWebSocketHandler`, создание HTTP/WebSocket server, `HttpServerOptions`, настройки Vert.x WebSocket, обработку text frames/messages, JSON parsing, WebSocket error handling, конфигурацию приложения и существующие WebSocket-тесты. Определи, можно ли ограничить размер сообщения средствами используемой версии Vert.x до передачи payload в application handler. Используй API именно той версии Vert.x, которая подключена в проекте.
+
+Требуемый лимит: ориентир `8192 bytes`. Предпочтительно сделать лимит конфигурируемым через `WEBSOCKET_MAX_MESSAGE_SIZE_BYTES=8192`, добавить default, `.env.example` и README. Ограничивать размер нужно как можно раньше средствами Vert.x HTTP/WebSocket server configuration. Даже при server-level limit оцени необходимость дополнительной проверки перед Jackson. Лимит считать в байтах, не в `String.length()`.
+
+При превышении лимита oversized payload не должен передаваться в Jackson, use case не должен вызываться, subscription не должна создаваться, состояние приложения не должно меняться. Предпочтительно закрыть соединение корректным WebSocket close code. Не логировать payload, prompt, result или весь JSON.
+
+Добавь regression tests: сообщение в пределах лимита, сообщение непосредственно ниже лимита, сообщение выше лимита, очень большое сообщение и сценарий, где другой клиент продолжает работать после oversized message от первого клиента.
+
+Не менять REST prompt limit `PROMPT_MAX_LENGTH = 4000`, не ограничивать исходящие события тем же значением, не смешивать с другими review fixes. Если добавляются или изменяются публичные backend-классы, интерфейсы или нетривиальные публичные методы, соблюдай требования `task.md` к Javadoc на русском языке.
+
+После реализации выполни WebSocket unit/integration tests, существующие backend tests и backend build. Git commit самостоятельно не выполнять. В конце покажи: где отсутствовало ограничение; какой лимит выбран и почему; на каком уровне Vert.x он применяется; есть ли дополнительная handler-level защита; что происходит при превышении лимита; какие файлы изменены; какие regression tests добавлены; подтверждение, что Jackson/use case не вызываются для oversized message; результаты тестов; результат backend build.
