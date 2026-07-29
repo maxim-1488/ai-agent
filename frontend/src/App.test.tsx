@@ -98,7 +98,7 @@ describe('AI Agent frontend', () => {
     await userEvent.click(screen.getByLabelText('Отправить задание'));
 
     await waitFor(() => expect(screen.getAllByText(baseTask.prompt!).length).toBeGreaterThanOrEqual(1));
-    expect(screen.getByText('Агент ожидает запуска')).toBeInTheDocument();
+    expect(screen.getByText('Жду запуск…')).toBeInTheDocument();
   });
 
   it('продолжает текущий чат до нажатия новой задачи', async () => {
@@ -145,8 +145,8 @@ describe('AI Agent frontend', () => {
 
     act(() => socket.emit({ type: 'TASK_PROGRESS', task: { ...baseTask, status: 'IN_PROGRESS', progress: 42 } }));
 
-    expect(await screen.findByText('42%')).toBeInTheDocument();
-    expect(screen.getByText('Агент выполняет задачу')).toBeInTheDocument();
+    expect(await screen.findByText('Собираю информацию…')).toBeInTheDocument();
+    expect(screen.queryByText('42%')).not.toBeInTheDocument();
   });
 
   it('показывает result после TASK_COMPLETED', async () => {
@@ -235,7 +235,8 @@ describe('AI Agent frontend', () => {
     act(() => MockWebSocket.instances[1].open());
     vi.useRealTimers();
 
-    expect(await screen.findByText('77%')).toBeInTheDocument();
+    expect(await screen.findByText('Собираю информацию…')).toBeInTheDocument();
+    expect(screen.queryByText('77%')).not.toBeInTheDocument();
   });
 
   it('отображает backend error', async () => {

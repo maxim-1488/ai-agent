@@ -48,9 +48,10 @@ class ApplicationBootstrapIntegrationTest {
 
     @Test
     void startAsyncSucceedsAfterHttpServerListensAndRuntimeShutsDown() throws Exception {
-        ApplicationBootstrap bootstrap = new ApplicationBootstrap();
+        CapturingVertxFactory vertxFactory = new CapturingVertxFactory();
+        ApplicationBootstrap bootstrap = new ApplicationBootstrap(vertxFactory);
         int port = freePort();
-        ApplicationRuntime runtime = await(bootstrap.startAsync(config(port)));
+        await(bootstrap.startAsync(config(port)));
 
         try {
             HttpResponse<String> health = send("GET", port, "/health", null);
@@ -61,7 +62,7 @@ class ApplicationBootstrapIntegrationTest {
             assertThat(created.statusCode()).isEqualTo(201);
             assertThat(created.body()).contains("\"prompt\":\"test prompt\"");
         } finally {
-            await(runtime.vertx().close());
+            await(vertxFactory.vertx.close());
         }
     }
 

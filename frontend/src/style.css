@@ -1,17 +1,17 @@
 :root {
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --bg: #f7f7f5;
-  --panel: #ffffff;
-  --sidebar: #f1f1ee;
+  font-family: Inter, "SF Pro Text", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg: #f3f4f6;
+  --panel: #fbfbfb;
+  --sidebar: #eceef1;
   --text: #1f2328;
   --muted: #6b7280;
-  --line: #deded9;
-  --accent: #2f6f5e;
-  --accent-strong: #25594c;
+  --line: #d9dde3;
+  --accent: #202123;
+  --accent-strong: #111318;
   --danger: #a33a3a;
   --danger-bg: #fff1f1;
-  --shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+  --shadow: 0 18px 50px rgba(15, 23, 42, 0.07);
 }
 
 * {
@@ -26,7 +26,9 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.9), transparent 32rem),
+    var(--bg);
   color: var(--text);
 }
 
@@ -55,7 +57,7 @@ textarea:disabled {
   width: 292px;
   flex: 0 0 292px;
   height: 100vh;
-  background: var(--sidebar);
+  background: linear-gradient(180deg, #f1f2f4 0%, var(--sidebar) 100%);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -70,8 +72,15 @@ textarea:disabled {
 }
 
 .sidebar__brand {
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: "SF Pro Rounded", "Avenir Next", Inter, ui-rounded, system-ui, sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1;
+  color: transparent;
+  background: linear-gradient(135deg, #101113 10%, #555d68 52%, #111318 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 
 .sidebar__close {
@@ -88,16 +97,39 @@ textarea:disabled {
 }
 
 .new-task {
-  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
   margin-bottom: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  font-weight: 600;
+  color: #2f3338;
+  font-weight: 560;
 }
 
 .new-task:hover,
 .task-item:hover {
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.new-task__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #30343a;
+}
+
+.new-task__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
 }
 
 .sidebar__list {
@@ -158,6 +190,7 @@ textarea:disabled {
   min-width: 0;
   flex: 1;
   height: 100vh;
+  background: var(--bg);
 }
 
 .topbar {
@@ -280,7 +313,7 @@ textarea:disabled {
   width: fit-content;
   max-width: min(680px, 100%);
   border-radius: 18px;
-  background: #eeeeea;
+  background: #e8eaed;
   padding: 12px 15px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -303,43 +336,52 @@ textarea:disabled {
 
 .task-progress {
   max-width: 520px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 16px;
-  padding: 14px;
-  box-shadow: var(--shadow);
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 2px 0;
+  box-shadow: none;
 }
 
 .task-progress__header,
 .task-progress__footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 }
 
 .task-progress__header {
-  margin-bottom: 12px;
+  color: #3f444b;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .task-progress__footer {
-  margin-top: 12px;
+  margin-top: 10px;
   color: var(--muted);
   font-size: 13px;
 }
 
-.task-progress__bar {
-  height: 7px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e7e7e2;
+.task-progress__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.task-progress__bar div {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), #73a995);
-  transition: width 180ms ease;
+.task-progress__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #7b818a;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.task-progress__dots span:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.task-progress__dots span:nth-child(3) {
+  animation-delay: 280ms;
 }
 
 .button {
@@ -379,7 +421,7 @@ textarea:disabled {
   right: 0;
   bottom: 0;
   padding: 16px 20px 22px;
-  background: linear-gradient(180deg, rgba(247, 247, 245, 0), var(--bg) 28%);
+  background: linear-gradient(180deg, rgba(243, 244, 246, 0), var(--bg) 28%);
 }
 
 .chat--empty .chat__composer {
@@ -461,6 +503,20 @@ textarea:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
   }
 }
 

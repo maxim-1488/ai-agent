@@ -39,16 +39,16 @@ public class ApplicationBootstrap {
      * lifecycle-кодом, затем bootstrap закрывает созданный им Vert.x instance и возвращает исходную ошибку startup.
      *
      * @param config валидированная конфигурация приложения
-     * @return Future runtime приложения, готового принимать HTTP-запросы
+     * @return Future, который завершается после готовности приложения принимать HTTP-запросы
      */
-    public Future<ApplicationRuntime> startAsync(AppConfig config) {
+    public Future<Void> startAsync(AppConfig config) {
         Vertx vertx = vertxFactory.create();
-        Promise<ApplicationRuntime> startup = Promise.promise();
+        Promise<Void> startup = Promise.promise();
         vertx.deployVerticle(new MainVerticle(config))
                 .onSuccess(deploymentId -> {
                     ShutdownManager shutdownManager = new ShutdownManager(vertx);
                     shutdownManager.register();
-                    startup.complete(new ApplicationRuntime(vertx, deploymentId, shutdownManager));
+                    startup.complete();
                 })
                 .onFailure(startupError -> closeVertxAfterStartupFailure(vertx, startupError, startup));
         return startup.future();
@@ -77,7 +77,7 @@ public class ApplicationBootstrap {
     private void closeVertxAfterStartupFailure(
             Vertx vertx,
             Throwable startupError,
-            Promise<ApplicationRuntime> startup) {
+            Promise<Void> startup) {
         vertx.close()
                 .onComplete(closeResult -> {
                     if (closeResult.failed()) {

@@ -30,7 +30,14 @@ export function Sidebar({
           <div className="sidebar__brand">ChatAI</div>
           <button type="button" className="sidebar__close" onClick={onClose} aria-label="Закрыть sidebar">×</button>
         </div>
-        <button type="button" className="new-task" onClick={onNewTask}>Новая задача</button>
+        <button type="button" className="new-task" onClick={onNewTask}>
+          <span className="new-task__icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" focusable="false">
+              <path d="M10 4.25v11.5M4.25 10h11.5" />
+            </svg>
+          </span>
+          <span>Новый чат</span>
+        </button>
         <div className="sidebar__list" aria-label="Список задач">
           {loading && <LoadingIndicator label="Загрузка задач" />}
           {!loading && tasks.length === 0 && <div className="sidebar__empty">Задач пока нет</div>}
