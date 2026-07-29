@@ -145,8 +145,24 @@ public class PostgresTaskRepository implements TaskRepository {
         return pool.withTransaction(conn -> conn.preparedQuery("UPDATE ai_task SET status='CANCELLED', completed_at=$1, updated_at=$1, version=version+1 "
                         + "WHERE id=$2 AND client_id=$3 AND status IN ('CREATED','IN_PROGRESS') RETURNING " + COLUMNS)
                 .execute(Tuple.of(now, id, clientId))
-                .map(rows -> conflictAwareOne(rows, "cancel", id))
+                .compose(rows -> cancelAwareOne(conn, rows, id, clientId))
                 .compose(task -> insertEvent(conn, task, TaskEventType.CANCELLED.wireType()).map(task)));
+    }
+
+    private Future<Task> cancelAwareOne(io.vertx.sqlclient.SqlConnection conn, RowSet<Row> rows, UUID taskId, String clientId) {
+        if (rows.iterator().hasNext()) {
+            log.debug("Repository optimistic update affected 1 row: operation=cancel, taskId={}", taskId);
+            return Future.succeededFuture(mapper.map(rows.iterator().next()));
+        }
+        log.warn("Repository optimistic update affected 0 rows: operation=cancel, taskId={}", taskId);
+        return conn.preparedQuery("SELECT status FROM ai_task WHERE id=$1 AND client_id=$2")
+                .execute(Tuple.of(taskId, clientId))
+                .map(visibleRows -> {
+                    if (!visibleRows.iterator().hasNext()) {
+                        throw new TaskNotFoundException("Task not found");
+                    }
+                    throw new TaskConflictException("Task was already changed or is in terminal state");
+                });
     }
 
     private Future<RowSet<Row>> insertEvent(io.vertx.sqlclient.SqlConnection conn, Task task, String type) {

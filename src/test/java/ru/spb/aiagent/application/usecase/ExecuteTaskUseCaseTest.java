@@ -113,6 +113,32 @@ class ExecuteTaskUseCaseTest {
     }
 
     @Test
+    void foreignClientCancelDoesNotAffectActiveExecutionProgressOrCompletion() {
+        ControlledAiClient aiClient = new ControlledAiClient();
+        Fixture fixture = fixture(aiClient);
+        Task task = fixture.createdTask();
+        CancelTaskUseCase cancel = new CancelTaskUseCase(fixture.repository, fixture.registry, fixture.publisher);
+
+        fixture.useCase.executeAsync(task);
+
+        Future<Task> cancelResult = cancel.cancel("other-client", task.id());
+
+        assertThat(cancelResult.failed()).isTrue();
+        assertThat(cancelResult.cause()).isInstanceOf(TaskNotFoundException.class);
+        assertThat(fixture.registry.isCancelled(task.id())).isFalse();
+
+        aiClient.progressCallback.onProgress(40);
+        aiClient.result.complete("result");
+
+        Task saved = fixture.repository.task(task.id());
+        assertThat(saved.status()).isEqualTo(TaskStatus.COMPLETED);
+        assertThat(saved.progress()).isEqualTo(100);
+        assertThat(saved.result()).isEqualTo("result");
+        assertThat(fixture.publisher.types()).contains("TASK_PROGRESS", "TASK_COMPLETED");
+        assertThat(fixture.publisher.types()).doesNotContain("TASK_CANCELLED");
+    }
+
+    @Test
     void doesNotRunTaskWhenRegistryRejectsDuplicateRegistration() {
         Fixture fixture = fixture((taskId, prompt, progressCallback, cancellationToken) -> Future.succeededFuture("result"));
         fixture.registry.registerResult = false;
@@ -225,6 +251,17 @@ class ExecuteTaskUseCaseTest {
         public Future<String> run(String taskId, String prompt, ProgressCallback progressCallback, CancellationToken cancelToken) {
             runCount++;
             return delegate.run(taskId, prompt, progressCallback, cancelToken);
+        }
+    }
+
+    private static class ControlledAiClient implements AiClient {
+        private final io.vertx.core.Promise<String> result = io.vertx.core.Promise.promise();
+        private ProgressCallback progressCallback;
+
+        @Override
+        public Future<String> run(String taskId, String prompt, ProgressCallback progressCallback, CancellationToken cancelToken) {
+            this.progressCallback = progressCallback;
+            return result.future();
         }
     }
 
@@ -349,7 +386,10 @@ class ExecuteTaskUseCaseTest {
         @Override
         public Future<Task> cancel(UUID id, String clientId) {
             Task task = task(id);
-            if (!task.clientId().equals(clientId) || task.status().isTerminal()) {
+            if (!task.clientId().equals(clientId)) {
+                return Future.failedFuture(new TaskNotFoundException("not found"));
+            }
+            if (task.status().isTerminal()) {
                 return Future.failedFuture(new TaskConflictException("cancel conflict"));
             }
             Task updated = copy(task, TaskStatus.CANCELLED, task.progress(), null, null);

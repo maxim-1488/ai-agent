@@ -34,12 +34,14 @@ public class CancelTaskUseCase {
      */
     public Future<Task> cancel(String clientId, UUID taskId) {
         log.debug("Starting cancel AI task use case: taskId={}, clientId={}", taskId, clientId);
-        registry.cancel(taskId);
         return repository.cancel(taskId, clientId)
                 .onSuccess(task -> log.info("AI task cancelled: taskId={}, clientId={}, status={}",
                         task.id(), task.clientId(), task.status()))
                 .onFailure(error -> log.warn("AI task cancellation failed or conflicted: taskId={}, clientId={}, reason={}",
                         taskId, clientId, error.getMessage()))
-                .compose(task -> publisher.publish(TaskEventType.CANCELLED, task).map(task));
+                .compose(task -> {
+                    registry.cancel(taskId);
+                    return publisher.publish(TaskEventType.CANCELLED, task).map(task);
+                });
     }
 }
