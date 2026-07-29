@@ -533,3 +533,42 @@ HTTP `BodyHandler` не решает эту проблему, потому чт�
 5. какие файлы изменены;
 6. какие проверки выполнены;
 7. есть ли сторонние изменения в рабочем дереве, не относящиеся к задаче.
+
+## Prompt 10
+Исправь проблему управления ресурсами при ошибке запуска HTTP-сервера, обнаруженную при code review.
+
+Проблема находится в bootstrap/startup lifecycle приложения, в частности около `ApplicationBootstrap.java`: текущая реализация при ошибке `httpServer.listen(...)` обрабатывает failure внутри асинхронного callback, но startup приложения при этом уже успел создать часть ресурсов. Возможный сценарий: приложение стартует, создаёт Vertx, выполняет Liquibase, создаёт PgPool, запускает heartbeat/timers, создаёт WebSocket infrastructure, затем `HttpServer.listen(...)` завершается ошибкой. После этого HTTP server не работает, но ранее созданные ресурсы могут остаться активными, и процесс может продолжать жить без работающего HTTP-сервера.
+
+Основная цель: startup приложения должен иметь явный асинхронный результат. Успешный startup должен завершаться success только после того, как все требуемые ресурсы инициализированы и HTTP server действительно слушает порт. Неуспешный startup должен очистить все уже созданные ресурсы, завершить startup Future failure и привести приложение к fail-fast, без частично запущенного состояния.
+
+Перед изменениями изучить `ApplicationBootstrap`, `main` / entry point, создание `Vertx`, запуск Liquibase, создание `PgPool`, создание HTTP server, `listen`, heartbeat, WebSocket registry, `ShutdownManager`, shutdown hook, существующий startup flow, graceful shutdown flow и integration tests. Не создавать второй независимый lifecycle-механизм, если существующий можно корректно расширить.
+
+Startup должен быть представлен через `Future` (`Future<ApplicationRuntime>` или `Future<Void>` — по архитектуре проекта). Вызывающий код должен иметь возможность узнать, что HTTP server действительно начал слушать порт, или что startup завершился ошибкой. Нельзя считать приложение успешно запущенным до успешного завершения `server.listen(...)`.
+
+Не бросать exception из asynchronous callback как основной способ распространения startup failure. Ошибка должна идти по Vert.x `Future` chain: создать ресурсы, выполнить `listen`, получить Future success/failure.
+
+Сохранить текущую архитектуру, но сделать порядок lifecycle очевидным. Выбрать порядок, который минимизирует rollback ресурсов. Если heartbeat не нужен до успешного `listen`, запускать heartbeat только после успешного HTTP startup. Не запускать фоновые timers раньше, чем они действительно нужны.
+
+При failed startup после partial initialization освободить уже созданные ресурсы: остановить heartbeat/timers, закрыть HTTP server если он частично создан, очистить WebSocket manager, закрыть PgPool, закрыть Vertx. Cleanup должен работать при partial initialization и не предполагать, что все ресурсы успели создаться.
+
+Не скрывать исходную ошибку. Если HTTP listen failed из-за занятого порта, это должна оставаться основной startup error. Cleanup failures залогировать и при необходимости добавить как suppressed/secondary failure, но не терять первоначальный exception.
+
+Entry point должен fail fast: если HTTP server не смог начать работу, приложение не должно оставаться запущенным, выглядеть READY или оставлять health endpoint. Не использовать схему `HTTP listen failed → log error → continue`.
+
+Проверить lifecycle heartbeat/timer. Если heartbeat запускается до `listen`, изменить порядок на `listen success → start heartbeat`, если возможно. Если heartbeat должен запускаться раньше, при failed startup timer обязательно отменить. Не реализовывать новую heartbeat-семантику.
+
+Если `PgPool` создан, а HTTP server не стартовал, вызвать `pool.close()`. Если `Vertx` instance создан bootstrap-кодом, failed startup должен закрывать Vertx, чтобы не оставались event-loop threads, worker threads, timers и network resources.
+
+Проверить, можно ли переиспользовать `ShutdownManager` или существующую cleanup/shutdown логику. Предпочтительно не дублировать два разных механизма startup failure cleanup и graceful shutdown, если можно выделить общий безопасный cleanup. Но не выполнять большой рефакторинг. Не смешивать с отдельным review-пунктом про то, что Vert.x не закрывается, если `PgPool.close()` завершился ошибкой.
+
+Если есть lifecycle state `STARTING/READY/STOPPING/STOPPED`, сохранить его. Если нет — не добавлять сложную state machine. Использовать существующий SLF4J подход к логированию. INFO: начало startup, Liquibase завершён, HTTP server слушает порт, приложение готово. ERROR: startup failed и причина failed listen. WARN/ERROR: ошибка cleanup after failed startup. Не логировать одну и ту же startup exception на каждом слое.
+
+Добавить regression test с занятым портом: занять HTTP port тестовым server/socket, запустить `ApplicationBootstrap` с этим port, убедиться, что HTTP listen завершился failure. Проверить, что startup Future failed, приложение не считается запущенным, HTTP server не работает, PgPool закрывается если был создан, Vert.x закрывается, heartbeat timer остановлен/не запущен, runtime resources очищены. Проверить propagation исходной ошибки startup без требования стабильного ОС-текста. Добавить successful startup test: свободный порт, start, listen succeeds, startup Future succeeds, health endpoint отвечает, REST requests принимаются, shutdown работает. Если удобно — добавить partial initialization unit test без усложнения production code.
+
+Не использовать `Thread.sleep`, busy waiting, блокировку event loop или синхронное ожидание Future на event loop. Startup должен оставаться асинхронным в стиле Vert.x. Если `main` должен дождаться startup result для exit status, использовать подход текущей архитектуры.
+
+Не менять бизнес-логику, REST contracts, WebSocket protocol, AI execution, task state machine, PostgreSQL schema, frontend, client isolation. Не смешивать с другими review issues: heartbeat semantics, WebSocket subscription race, WebSocket message limit, AI timeout architecture, cancel isolation, общий shutdown failure при `PgPool.close()`.
+
+Если меняются публичные backend-классы или нетривиальные публичные методы, сохранить Javadoc на русском языке согласно `task.md`: для startup/shutdown методов описать, когда Future считается successful, какие ресурсы создаются, как обрабатывается failure и какие гарантии cleanup предоставляются.
+
+После реализации выполнить startup/bootstrap tests, integration test с занятым портом, health endpoint test, backend unit tests, backend integration tests, backend build. При возможности вручную проверить free port → READY и occupied port → startup fails/resources closed/process does not remain running. Git commit не выполнять. В конце показать: как работал startup до исправления; почему exception внутри callback не обеспечивал fail-fast; как теперь распространяется startup failure; какие ресурсы очищаются при failed `listen`; изменился ли порядок heartbeat/timers; какие файлы изменены; какие regression tests добавлены; результат теста с занятым портом; результаты backend tests; результат backend build.

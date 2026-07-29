@@ -64,10 +64,11 @@ public final class MainVerticle extends AbstractVerticle {
         runMigrations()
                 .compose(ignored -> createInfrastructure())
                 .compose(ignored -> startHttpServer())
+                .compose(ignored -> startHeartbeat())
                 .onSuccess(ignored -> startPromise.complete())
                 .onFailure(error -> {
                     log.error("Application infrastructure startup failed", error);
-                    closeAfterStartupFailure()
+                    closeAfterStartupFailure(error)
                             .onComplete(closeResult -> startPromise.fail(error));
                 });
     }
@@ -87,7 +88,7 @@ public final class MainVerticle extends AbstractVerticle {
         return vertx.executeBlocking(() -> {
                     var database = config.database();
                     new LiquibaseMigrator().migrate(database.jdbcUrl(), database.user(), database.password());
-                    return null;
+                    return Boolean.TRUE;
                 })
                 .onSuccess(ignored -> log.info("Liquibase migrations completed successfully"))
                 .mapEmpty();
@@ -100,7 +101,6 @@ public final class MainVerticle extends AbstractVerticle {
         pool = new PgPoolFactory().create(vertx, database);
         publisher = new WebSocketSubscriptionRegistry();
         heartbeat = new HeartbeatService(vertx);
-        heartbeat.start(() -> { });
         return Future.succeededFuture();
     }
 
@@ -130,6 +130,13 @@ public final class MainVerticle extends AbstractVerticle {
                 .mapEmpty();
     }
 
+    private Future<Void> startHeartbeat() {
+        heartbeat.start(() -> { });
+        log.info("Heartbeat started");
+        log.info("Application startup completed");
+        return Future.succeededFuture();
+    }
+
     /**
      * Останавливает ресурсы, которыми владеет verticle.
      *
@@ -147,6 +154,10 @@ public final class MainVerticle extends AbstractVerticle {
 
     private Future<Void> closeHttpServer() {
         if (httpServer == null) {
+            return Future.succeededFuture();
+        }
+        if (httpServer.actualPort() <= 0) {
+            httpServer = null;
             return Future.succeededFuture();
         }
         return httpServer.close()
@@ -176,14 +187,25 @@ public final class MainVerticle extends AbstractVerticle {
                 .onSuccess(ignored -> log.info("PostgreSQL pool closed"));
     }
 
-    private Future<Void> closeAfterStartupFailure() {
-        return stopHeartbeat()
-                .compose(ignored -> closeWebSockets())
-                .compose(ignored -> closePool())
-                .otherwise(error -> {
-                    log.error("Failed to close resources after startup failure", error);
-                    return null;
+    private Future<Void> closeAfterStartupFailure(Throwable startupError) {
+        return cleanupAfterStartupFailure("HTTP server", this::closeHttpServer, startupError)
+                .compose(ignored -> cleanupAfterStartupFailure("heartbeat", this::stopHeartbeat, startupError))
+                .compose(ignored -> cleanupAfterStartupFailure("WebSocket connections", this::closeWebSockets, startupError))
+                .compose(ignored -> cleanupAfterStartupFailure("PostgreSQL pool", this::closePool, startupError));
+    }
+
+    private Future<Void> cleanupAfterStartupFailure(String resourceName, CleanupAction cleanup, Throwable startupError) {
+        return cleanup.close()
+                .recover(cleanupError -> {
+                    startupError.addSuppressed(cleanupError);
+                    log.warn("Failed to close {} after startup failure", resourceName, cleanupError);
+                    return Future.succeededFuture();
                 });
+    }
+
+    @FunctionalInterface
+    private interface CleanupAction {
+        Future<Void> close();
     }
 
     /**
