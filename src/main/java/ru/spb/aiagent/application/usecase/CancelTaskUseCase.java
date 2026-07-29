@@ -2,6 +2,7 @@ package ru.spb.aiagent.application.usecase;
 
 import ru.spb.aiagent.application.core.TaskEventPublisher;
 import ru.spb.aiagent.application.core.TaskExecutionRegistry;
+import ru.spb.aiagent.application.core.TaskEventType;
 import ru.spb.aiagent.application.core.TaskRepository;
 import ru.spb.aiagent.domain.model.Task;
 import io.vertx.core.Future;
@@ -39,6 +40,6 @@ public class CancelTaskUseCase {
                         task.id(), task.clientId(), task.status()))
                 .onFailure(error -> log.warn("AI task cancellation failed or conflicted: taskId={}, clientId={}, reason={}",
                         taskId, clientId, error.getMessage()))
-                .compose(task -> publisher.publish("TASK_CANCELLED", task).map(task));
+                .compose(task -> publisher.publish(TaskEventType.CANCELLED, task).map(task));
     }
 }

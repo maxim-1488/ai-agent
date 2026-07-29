@@ -2,6 +2,7 @@ package ru.spb.aiagent.application.usecase;
 
 import ru.spb.aiagent.application.core.ClockProvider;
 import ru.spb.aiagent.application.core.TaskEventPublisher;
+import ru.spb.aiagent.application.core.TaskEventType;
 import ru.spb.aiagent.application.core.TaskRepository;
 import ru.spb.aiagent.domain.model.Task;
 import io.vertx.core.Future;
@@ -42,7 +43,7 @@ public class CreateTaskUseCase {
         }
         Task task = Task.create(clientId.trim(), prompt.trim(), clock.now());
         return repository.create(task)
-                .compose(saved -> publisher.publish("TASK_CREATED", saved).map(saved))
+                .compose(saved -> publisher.publish(TaskEventType.CREATED, saved).map(saved))
                 .onSuccess(saved -> {
                     log.info("AI task created: taskId={}, clientId={}, status={}, promptLength={}",
                             saved.id(), saved.clientId(), saved.status(), saved.prompt().length());

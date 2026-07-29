@@ -1,6 +1,7 @@
 package ru.spb.aiagent.infrastructure.repository;
 
 import ru.spb.aiagent.application.core.TaskRepository;
+import ru.spb.aiagent.application.core.TaskEventType;
 import ru.spb.aiagent.domain.exception.TaskConflictException;
 import ru.spb.aiagent.domain.exception.TaskNotFoundException;
 import ru.spb.aiagent.domain.model.Task;
@@ -50,7 +51,7 @@ public class PostgresTaskRepository implements TaskRepository {
                         task.createdAt(), task.startedAt(), task.completedAt(), task.updatedAt(), task.version()))
                 .compose(rows -> {
                     Task saved = one(rows);
-                    return insertEvent(conn, saved, "TASK_CREATED").map(saved);
+                    return insertEvent(conn, saved, TaskEventType.CREATED.wireType()).map(saved);
                 }))
                 .onFailure(error -> log.error("Repository create task failed: taskId={}, clientId={}", task.id(), task.clientId(), error));
     }
@@ -124,7 +125,7 @@ public class PostgresTaskRepository implements TaskRepository {
             return Future.failedFuture(new IllegalArgumentException("Invalid terminal status"));
         }
         OffsetDateTime now = now();
-        String eventType = status == TaskStatus.COMPLETED ? "TASK_COMPLETED" : "TASK_FAILED";
+        String eventType = TaskEventType.fromTerminalStatus(status).wireType();
         log.debug("Repository complete task: taskId={}, terminalStatus={}", id, status);
         return pool.withTransaction(conn -> conn.preparedQuery("UPDATE ai_task SET status=$1, progress=CASE WHEN $1::varchar='COMPLETED' THEN 100 ELSE progress END, "
                         + "result=$2, error_message=$3, completed_at=$4, updated_at=$4, version=version+1 "
@@ -145,7 +146,7 @@ public class PostgresTaskRepository implements TaskRepository {
                         + "WHERE id=$2 AND client_id=$3 AND status IN ('CREATED','IN_PROGRESS') RETURNING " + COLUMNS)
                 .execute(Tuple.of(now, id, clientId))
                 .map(rows -> conflictAwareOne(rows, "cancel", id))
-                .compose(task -> insertEvent(conn, task, "TASK_CANCELLED").map(task)));
+                .compose(task -> insertEvent(conn, task, TaskEventType.CANCELLED.wireType()).map(task)));
     }
 
     private Future<RowSet<Row>> insertEvent(io.vertx.sqlclient.SqlConnection conn, Task task, String type) {

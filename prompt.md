@@ -107,3 +107,24 @@ Error handling: избежать дублирования одного exception
 После изменений выполни backend build, unit tests, integration tests, startup приложения, successful lifecycle, FAILED, CANCELLED, timeout, correlation ID, graceful shutdown и ручной просмотр логов. Не выполняй Git commit самостоятельно.
 
 В конце покажи: какое логирование было до изменений; найденные проблемы; изменённые классы; где добавлено INFO/WARN/ERROR/DEBUG; как реализован correlation ID; изменялся ли `logback.xml`; как предотвращено избыточное логирование; результаты тестов и сборки; примеры типичных логов без чувствительных данных.
+
+## Prompt 4
+Проведи точечный рефакторинг `ExecuteTaskUseCase`, прежде всего метода `executeAsync(Task task)`, без несвязанного рефакторинга проекта.
+
+Сохрани гексагональную архитектуру, публичный контракт класса без необходимости не меняй, поведение не ломай и не противоречь `task.md` и `PLAN.md`. `ExecuteTaskUseCase` остаётся application/use case слоем и работает через Vert.x `Future`.
+
+Основные цели:
+
+1. Разделить перегруженный `executeAsync()` на небольшие приватные методы с явными ответственностями: регистрация выполнения, перевод в `IN_PROGRESS`, публикация старта, запуск `AiClient`, progress callback, обновление progress, terminal update, обработка ошибок, cancellation и cleanup.
+2. Сохранить optimistic locking через `task.version()` при `markInProgress()` и не запускать `AiClient`, если старт задачи не подтверждён.
+3. Убрать строковые литералы событий из бизнес-потока. Предпочтительно ввести `TaskEventType` или централизованное место для event names.
+4. Исправить terminal events: `COMPLETED -> TASK_COMPLETED`, `FAILED -> TASK_FAILED`, `TIMED_OUT -> TASK_TIMED_OUT`. `TASK_CANCELLED` добавлять только если текущая модель реально поддерживает отдельный terminal status `CANCELLED`.
+5. Не определять timeout через `error.getClass().getSimpleName().contains("Timeout")`. Если подходящего исключения нет, добавить минимальное application/domain-level исключение, например `AiTimeoutException`, чтобы application слой не зависел от конкретной реализации AI-клиента.
+6. Проверить cancellation: задача не должна ошибочно оставаться `IN_PROGRESS`, cancellation не должна превращаться в `FAILED`, `registry.unregister()` должен выполняться всегда, ложный `TASK_FAILED` публиковаться не должен. Если cancellation уже завершается другим use case, не дублировать эту ответственность и явно сохранить текущую модель.
+7. Логирование оставить умеренным: INFO для старта и успешного завершения, WARN для timeout/cancellation/optimistic conflict, ERROR для failure и неожиданного сбоя async chain, DEBUG для progress. Не логировать одну ошибку многократно.
+8. Не использовать `.recover()` так, чтобы ошибки внутри error-handling скрывали исходную причину. Ошибка сохранения terminal status или публикации terminal event должна быть заметна в логах.
+9. Для новых и изменённых публичных классов/методов добавить JavaDoc на русском языке.
+
+Добавь или обнови unit-тесты минимум для сценариев: success `IN_PROGRESS -> COMPLETED`, progress update + event, AI error -> `FAILED`, timeout -> `TIMED_OUT`, timeout публикует `TASK_TIMED_OUT`, cancellation не становится `FAILED`, повторный `registry.register()` не запускает задачу повторно, `registry.unregister()` вызывается после success и failure, ошибка публикации события корректно обрабатывается, optimistic lock/version conflict не запускает `AiClient`.
+
+После изменений выполни релевантные backend-тесты. В конце покажи изменённые файлы, итоговую версию `ExecuteTaskUseCase`, созданные enum/классы, добавленные или изменённые тесты, краткие архитектурные причины изменений и результаты проверок. Не выполняй git commit самостоятельно.
