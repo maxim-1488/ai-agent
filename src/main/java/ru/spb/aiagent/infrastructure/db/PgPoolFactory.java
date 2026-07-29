@@ -1,6 +1,6 @@
 package ru.spb.aiagent.infrastructure.db;
 
-import ru.spb.aiagent.infrastructure.config.AppConfig;
+import ru.spb.aiagent.infrastructure.config.DatabaseConfig;
 import io.vertx.core.Vertx;
 import io.vertx.pgclient.PgBuilder;
 import io.vertx.pgclient.PgConnectOptions;
@@ -14,17 +14,17 @@ public class PgPoolFactory {
     /**
      * Создаёт PgPool после успешных Liquibase-миграций.
      */
-    public Pool create(Vertx vertx, AppConfig config) {
+    public Pool create(Vertx vertx, DatabaseConfig config) {
         PgConnectOptions connect = new PgConnectOptions()
-                .setHost(config.databaseHost())
-                .setPort(config.databasePort())
-                .setDatabase(config.databaseName())
-                .setUser(config.databaseUser())
-                .setPassword(config.databasePassword());
+                .setHost(config.host())
+                .setPort(config.port())
+                .setDatabase(config.name())
+                .setUser(config.user())
+                .setPassword(config.password());
         return PgBuilder.pool()
                 .using(vertx)
                 .connectingTo(connect)
-                .with(new PoolOptions().setMaxSize(config.databasePoolSize()))
+                .with(new PoolOptions().setMaxSize(config.poolSize()))
                 .build();
     }
 }

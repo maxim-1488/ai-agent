@@ -73,18 +73,20 @@ public final class MainVerticle extends AbstractVerticle {
     }
 
     private void logStartupConfiguration() {
+        var database = config.database();
         log.info("Application startup initiated");
         log.info("Configuration loaded: httpPort={}, databaseHost={}, databasePort={}, databaseName={}, "
                         + "databasePoolSize={}, aiStepDelayMs={}, aiTimeoutMs={}, websocketMaxMessageSizeBytes={}",
-                config.httpPort(), config.databaseHost(), config.databasePort(), config.databaseName(),
-                config.databasePoolSize(), config.aiStepDelayMs(), config.aiTimeoutMs(),
+                config.httpPort(), database.host(), database.port(), database.name(),
+                database.poolSize(), config.aiStepDelayMs(), config.aiTimeoutMs(),
                 config.websocketMaxMessageSizeBytes());
     }
 
     private Future<Void> runMigrations() {
         log.info("Starting Liquibase migrations");
         return vertx.executeBlocking(() -> {
-                    new LiquibaseMigrator().migrate(config.jdbcUrl(), config.databaseUser(), config.databasePassword());
+                    var database = config.database();
+                    new LiquibaseMigrator().migrate(database.jdbcUrl(), database.user(), database.password());
                     return null;
                 })
                 .onSuccess(ignored -> log.info("Liquibase migrations completed successfully"))
@@ -92,9 +94,10 @@ public final class MainVerticle extends AbstractVerticle {
     }
 
     private Future<Void> createInfrastructure() {
+        var database = config.database();
         log.info("Creating PostgreSQL pool: host={}, port={}, database={}, poolSize={}",
-                config.databaseHost(), config.databasePort(), config.databaseName(), config.databasePoolSize());
-        pool = new PgPoolFactory().create(vertx, config);
+                database.host(), database.port(), database.name(), database.poolSize());
+        pool = new PgPoolFactory().create(vertx, database);
         publisher = new WebSocketSubscriptionRegistry();
         heartbeat = new HeartbeatService(vertx);
         heartbeat.start(() -> { });

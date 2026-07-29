@@ -5,44 +5,31 @@ package ru.spb.aiagent.infrastructure.config;
  */
 public record AppConfig(
         int httpPort,
-        String databaseHost,
-        int databasePort,
-        String databaseName,
-        String databaseUser,
-        String databasePassword,
-        int databasePoolSize,
-        String jdbcUrl,
+        DatabaseConfig database,
         int aiStepDelayMs,
         int aiTimeoutMs,
         int websocketMaxMessageSizeBytes) {
     private static final int DEFAULT_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES = 8192;
 
     /**
+     * Создаёт конфигурацию приложения.
+     */
+    public AppConfig {
+        if (database == null) {
+            throw new ConfigException("database configuration must not be null");
+        }
+    }
+
+    /**
      * Читает и валидирует конфигурацию из окружения.
      */
     public static AppConfig fromEnv() {
-        int dbPort = intEnv("DATABASE_PORT", 5432);
-        String dbName = strEnv("DATABASE_NAME", "ai_agent");
-        String dbUser = strEnv("DATABASE_USER", "ai_agent");
-        String dbPassword = strEnv("DATABASE_PASSWORD", "ai_agent");
-        String jdbc = strEnv("DATABASE_JDBC_URL", "jdbc:postgresql://" + strEnv("DATABASE_HOST", "localhost") + ":" + dbPort + "/" + dbName);
         return new AppConfig(
                 intEnv("HTTP_PORT", 8080),
-                strEnv("DATABASE_HOST", "localhost"),
-                dbPort,
-                dbName,
-                dbUser,
-                dbPassword,
-                intEnv("DATABASE_POOL_SIZE", 10),
-                jdbc,
+                DatabaseConfig.fromEnv(),
                 intEnv("AI_STEP_DELAY_MS", 150),
                 intEnv("AI_TIMEOUT_MS", 7000),
                 intEnv("WEBSOCKET_MAX_MESSAGE_SIZE_BYTES", DEFAULT_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES));
-    }
-
-    private static String strEnv(String key, String fallback) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? fallback : value;
     }
 
     private static int intEnv(String key, int fallback) {
