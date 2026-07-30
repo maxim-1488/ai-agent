@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ExecuteTaskUseCaseTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-07-28T10:00:00Z");
+    private static final ThreadLocal<Fixture> fixtureRef = new ThreadLocal<>();
 
     @Test
     void executesSuccessfullyFromInProgressToCompleted() {
@@ -210,8 +211,6 @@ class ExecuteTaskUseCaseTest {
         assertThat(fixture.repository.task(task.id()).status()).isEqualTo(TaskStatus.CREATED);
         assertThat(fixture.registry.unregisterCount).isEqualTo(1);
     }
-
-    private static final ThreadLocal<Fixture> fixtureRef = new ThreadLocal<>();
 
     private Fixture fixture(AiClient aiClient) {
         RecordingRepository repository = new RecordingRepository();

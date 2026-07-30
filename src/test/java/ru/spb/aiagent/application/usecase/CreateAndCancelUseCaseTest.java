@@ -28,7 +28,11 @@ class CreateAndCancelUseCaseTest {
     void createsAndSchedulesTask() {
         FakeRepository repo = new FakeRepository();
         InMemoryTaskExecutionRegistry registry = new InMemoryTaskExecutionRegistry();
-        ExecuteTaskUseCase execute = new ExecuteTaskUseCase(repo, (id, prompt, cb, token) -> Future.succeededFuture("ok"), registry, (type, task) -> Future.succeededFuture());
+        ExecuteTaskUseCase execute = new ExecuteTaskUseCase(
+                repo,
+                (id, prompt, cb, token) -> Future.succeededFuture("ok"),
+                registry,
+                (type, task) -> Future.succeededFuture());
         CreateTaskUseCase create = new CreateTaskUseCase(repo, fixedClock(), execute, (type, task) -> Future.succeededFuture());
 
         Task task = create.create("client", "prompt").result();
@@ -122,7 +126,9 @@ class CreateAndCancelUseCaseTest {
         @Override
         public Future<Task> findByIdAndClientId(UUID id, String clientId) {
             Task task = tasks.get(id);
-            return task == null || !task.clientId().equals(clientId) ? Future.failedFuture(new TaskNotFoundException("not found")) : Future.succeededFuture(task);
+            return task == null || !task.clientId().equals(clientId)
+                    ? Future.failedFuture(new TaskNotFoundException("not found"))
+                    : Future.succeededFuture(task);
         }
 
         @Override
@@ -140,7 +146,8 @@ class CreateAndCancelUseCaseTest {
         @Override
         public Future<Task> markInProgress(UUID id, long version) {
             Task t = tasks.get(id);
-            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.IN_PROGRESS, 0, null, null, t.createdAt(), t.createdAt(), null, t.createdAt(), t.version() + 1);
+            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.IN_PROGRESS, 0, null, null,
+                    t.createdAt(), t.createdAt(), null, t.createdAt(), t.version() + 1);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }
@@ -151,7 +158,8 @@ class CreateAndCancelUseCaseTest {
             if (t.version() != version || t.status() != TaskStatus.IN_PROGRESS) {
                 return Future.failedFuture(new TaskConflictException("recovery conflict"));
             }
-            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.CREATED, 0, null, null, t.createdAt(), null, null, t.createdAt(), t.version() + 1);
+            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.CREATED, 0, null, null,
+                    t.createdAt(), null, null, t.createdAt(), t.version() + 1);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }
@@ -162,7 +170,8 @@ class CreateAndCancelUseCaseTest {
             if (t.status() != TaskStatus.IN_PROGRESS) {
                 return Future.failedFuture(new TaskConflictException("progress conflict"));
             }
-            Task updated = new Task(t.id(), t.clientId(), t.prompt(), t.status(), progress, null, null, t.createdAt(), t.startedAt(), null, t.createdAt(), t.version() + 1);
+            Task updated = new Task(t.id(), t.clientId(), t.prompt(), t.status(), progress, null, null,
+                    t.createdAt(), t.startedAt(), null, t.createdAt(), t.version() + 1);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }
@@ -173,7 +182,9 @@ class CreateAndCancelUseCaseTest {
             if (t.status() != TaskStatus.IN_PROGRESS || status == TaskStatus.CANCELLED || !status.isTerminal()) {
                 return Future.failedFuture(new TaskConflictException("complete conflict"));
             }
-            Task updated = new Task(t.id(), t.clientId(), t.prompt(), status, status == TaskStatus.COMPLETED ? 100 : t.progress(), result, errorMessage, t.createdAt(), t.startedAt(), t.createdAt(), t.createdAt(), t.version() + 1);
+            Task updated = new Task(t.id(), t.clientId(), t.prompt(), status,
+                    status == TaskStatus.COMPLETED ? 100 : t.progress(), result, errorMessage,
+                    t.createdAt(), t.startedAt(), t.createdAt(), t.createdAt(), t.version() + 1);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }
@@ -187,7 +198,8 @@ class CreateAndCancelUseCaseTest {
             if (t.status().isTerminal()) {
                 return Future.failedFuture(new TaskConflictException("cancel conflict"));
             }
-            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.CANCELLED, t.progress(), null, null, t.createdAt(), t.startedAt(), t.createdAt(), t.createdAt(), t.version() + 1);
+            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.CANCELLED, t.progress(), null, null,
+                    t.createdAt(), t.startedAt(), t.createdAt(), t.createdAt(), t.version() + 1);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }

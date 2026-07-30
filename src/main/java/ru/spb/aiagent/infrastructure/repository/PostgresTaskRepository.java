@@ -29,7 +29,8 @@ import org.slf4j.LoggerFactory;
  */
 public class PostgresTaskRepository implements TaskRepository {
     private static final Logger log = LoggerFactory.getLogger(PostgresTaskRepository.class);
-    private static final String COLUMNS = "id, client_id, prompt, status, progress, result, error_message, created_at, started_at, completed_at, updated_at, version";
+    private static final String COLUMNS = "id, client_id, prompt, status, progress, result, error_message, "
+            + "created_at, started_at, completed_at, updated_at, version";
     private final Pool pool;
     private final TaskRowMapper mapper = new TaskRowMapper();
 
@@ -80,7 +81,9 @@ public class PostgresTaskRepository implements TaskRepository {
                 ? Tuple.of(clientId, filter.size(), filter.page() * filter.size())
                 : Tuple.of(clientId, filter.status().name(), filter.size(), filter.page() * filter.size());
         Tuple countParams = filter.status() == null ? Tuple.of(clientId) : Tuple.of(clientId, filter.status().name());
-        String dataSql = "SELECT " + COLUMNS + " FROM ai_task WHERE " + where + " ORDER BY " + sort + " LIMIT $" + (filter.status() == null ? 2 : 3) + " OFFSET $" + (filter.status() == null ? 3 : 4);
+        String dataSql = "SELECT " + COLUMNS + " FROM ai_task WHERE " + where + " ORDER BY " + sort
+                + " LIMIT $" + (filter.status() == null ? 2 : 3)
+                + " OFFSET $" + (filter.status() == null ? 3 : 4);
         String countSql = "SELECT count(*) AS total FROM ai_task WHERE " + where;
         return pool.preparedQuery(dataSql).execute(dataParams).compose(rows -> {
             ArrayList<Task> tasks = new ArrayList<>();
@@ -159,7 +162,8 @@ public class PostgresTaskRepository implements TaskRepository {
         OffsetDateTime now = now();
         String eventType = TaskEventType.fromTerminalStatus(status).wireType();
         log.debug("Repository complete task: taskId={}, terminalStatus={}", id, status);
-        return pool.withTransaction(conn -> conn.preparedQuery("UPDATE ai_task SET status=$1, progress=CASE WHEN $1::varchar='COMPLETED' THEN 100 ELSE progress END, "
+        return pool.withTransaction(conn -> conn.preparedQuery("UPDATE ai_task SET status=$1, "
+                        + "progress=CASE WHEN $1::varchar='COMPLETED' THEN 100 ELSE progress END, "
                         + "result=$2, error_message=$3, completed_at=$4, updated_at=$4, version=version+1 "
                 + "WHERE id=$5 AND status='IN_PROGRESS' RETURNING " + COLUMNS)
                 .execute(Tuple.of(status.name(), result, errorMessage, now, id))

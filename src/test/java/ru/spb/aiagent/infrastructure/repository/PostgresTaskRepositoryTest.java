@@ -35,7 +35,8 @@ class PostgresTaskRepositoryTest {
         withRepository(repo -> {
             Task saved = await(repo.create(Task.create("client", "prompt", OffsetDateTime.now(ZoneOffset.UTC))));
             assertThat(await(repo.findByIdAndClientId(saved.id(), "client")).id()).isEqualTo(saved.id());
-            assertThat(await(repo.list("client", new TaskFilter(0, 20, null, TaskFilter.SortField.CREATED_AT, TaskFilter.SortDirection.DESC))).total()).isEqualTo(1);
+            TaskFilter filter = new TaskFilter(0, 20, null, TaskFilter.SortField.CREATED_AT, TaskFilter.SortDirection.DESC);
+            assertThat(await(repo.list("client", filter)).total()).isEqualTo(1);
         });
     }
 

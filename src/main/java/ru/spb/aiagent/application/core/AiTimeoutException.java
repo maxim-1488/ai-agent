@@ -1,11 +1,11 @@
 package ru.spb.aiagent.application.core;
 
 /**
- * Timeout reported by an AI client adapter through the application port contract.
+ * Таймаут, полученный от AI-клиента через application port contract.
  */
 public class AiTimeoutException extends RuntimeException {
     /**
-     * Creates an AI timeout error.
+     * Создаёт ошибку таймаута AI-клиента.
      */
     public AiTimeoutException(String message) {
         super(message);

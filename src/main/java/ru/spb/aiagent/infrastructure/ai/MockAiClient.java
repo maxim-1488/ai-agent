@@ -45,7 +45,14 @@ public class MockAiClient implements AiClient {
         return promise.future();
     }
 
-    private void step(String taskId, String prompt, ProgressCallback progressCallback, CancellationToken cancelToken, Promise<String> promise, int progress, long timeoutTimer) {
+    private void step(
+            String taskId,
+            String prompt,
+            ProgressCallback progressCallback,
+            CancellationToken cancelToken,
+            Promise<String> promise,
+            int progress,
+            long timeoutTimer) {
         if (promise.future().isComplete()) {
             return;
         }

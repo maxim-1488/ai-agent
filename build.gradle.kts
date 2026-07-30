@@ -77,7 +77,6 @@ checkstyle {
 }
 
 tasks.withType<Checkstyle>().configureEach {
-    enabled = false
     exclude("**/dto/**")
 }
 
