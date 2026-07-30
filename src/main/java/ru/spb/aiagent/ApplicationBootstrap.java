@@ -1,12 +1,16 @@
 package ru.spb.aiagent;
 
 import ru.spb.aiagent.infrastructure.config.AppConfig;
+import io.vertx.core.Verticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
+import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,19 +19,30 @@ import org.slf4j.LoggerFactory;
  */
 public class ApplicationBootstrap {
     private static final Logger log = LoggerFactory.getLogger(ApplicationBootstrap.class);
-    private static final long STARTUP_TIMEOUT_SECONDS = 60;
+    private static final Duration STARTUP_TIMEOUT = Duration.ofSeconds(60);
 
     private final VertxFactory vertxFactory;
+    private final Duration startupTimeout;
+    private final Function<AppConfig, Verticle> verticleFactory;
 
     /**
      * Создаёт bootstrap с production-фабрикой Vert.x.
      */
     public ApplicationBootstrap() {
-        this(new VertxFactory());
+        this(new VertxFactory(), STARTUP_TIMEOUT, MainVerticle::new);
     }
 
     ApplicationBootstrap(VertxFactory vertxFactory) {
+        this(vertxFactory, STARTUP_TIMEOUT, MainVerticle::new);
+    }
+
+    ApplicationBootstrap(
+            VertxFactory vertxFactory,
+            Duration startupTimeout,
+            Function<AppConfig, Verticle> verticleFactory) {
         this.vertxFactory = vertxFactory;
+        this.startupTimeout = startupTimeout;
+        this.verticleFactory = verticleFactory;
     }
 
     /**
@@ -42,16 +57,30 @@ public class ApplicationBootstrap {
      * @return Future, который завершается после готовности приложения принимать HTTP-запросы
      */
     public Future<Void> startAsync(AppConfig config) {
+        return createStartupLifecycle(config).startup().future();
+    }
+
+    private StartupLifecycle createStartupLifecycle(AppConfig config) {
         Vertx vertx = vertxFactory.create();
         Promise<Void> startup = Promise.promise();
-        vertx.deployVerticle(new MainVerticle(config))
+        AtomicBoolean startupTerminated = new AtomicBoolean(false);
+        AtomicBoolean closeStarted = new AtomicBoolean(false);
+        vertx.deployVerticle(verticleFactory.apply(config))
                 .onSuccess(deploymentId -> {
-                    ShutdownManager shutdownManager = new ShutdownManager(vertx);
-                    shutdownManager.register();
-                    startup.complete();
+                    if (startupTerminated.compareAndSet(false, true)) {
+                        ShutdownManager shutdownManager = new ShutdownManager(vertx);
+                        shutdownManager.register();
+                        startup.complete();
+                    } else {
+                        closeVertxOnce(vertx, closeStarted, null, "after startup timeout");
+                    }
                 })
-                .onFailure(startupError -> closeVertxAfterStartupFailure(vertx, startupError, startup));
-        return startup.future();
+                .onFailure(startupError -> {
+                    if (startupTerminated.compareAndSet(false, true)) {
+                        closeVertxAfterStartupFailure(vertx, startupError, startup, closeStarted);
+                    }
+                });
+        return new StartupLifecycle(vertx, startup, startupTerminated, closeStarted);
     }
 
     /**
@@ -60,32 +89,62 @@ public class ApplicationBootstrap {
      * @param config валидированная конфигурация приложения
      */
     public void start(AppConfig config) {
+        StartupLifecycle startup = createStartupLifecycle(config);
         try {
-            startAsync(config).toCompletionStage()
+            startup.startup().future().toCompletionStage()
                     .toCompletableFuture()
-                    .get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .get(startupTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            closeVertxAfterStartupTimeout(startup, e);
             throw new IllegalStateException("Application startup was interrupted", e);
         } catch (ExecutionException e) {
             throw new IllegalStateException("Application startup failed", e.getCause());
         } catch (TimeoutException e) {
+            closeVertxAfterStartupTimeout(startup, e);
             throw new IllegalStateException("Application startup timed out", e);
         }
+    }
+
+    private void closeVertxAfterStartupTimeout(StartupLifecycle startup, Throwable startupError) {
+        if (startup.startupTerminated.compareAndSet(false, true)) {
+            startup.startup().tryFail(startupError);
+        }
+        closeVertxOnce(startup.vertx(), startup.closeStarted(), startupError, "after startup timeout");
     }
 
     private void closeVertxAfterStartupFailure(
             Vertx vertx,
             Throwable startupError,
-            Promise<Void> startup) {
-        vertx.close()
+            Promise<Void> startup,
+            AtomicBoolean closeStarted) {
+        closeVertxOnce(vertx, closeStarted, startupError, "after startup failure")
                 .onComplete(closeResult -> {
-                    if (closeResult.failed()) {
-                        Throwable closeError = closeResult.cause();
-                        startupError.addSuppressed(closeError);
-                        log.warn("Failed to close Vert.x after startup failure", closeError);
-                    }
-                    startup.fail(startupError);
+                    startup.tryFail(startupError);
                 });
+    }
+
+    private Future<Void> closeVertxOnce(
+            Vertx vertx,
+            AtomicBoolean closeStarted,
+            Throwable startupError,
+            String reason) {
+        if (!closeStarted.compareAndSet(false, true)) {
+            return Future.succeededFuture();
+        }
+        return vertx.close()
+                .onFailure(closeError -> {
+                    if (startupError != null) {
+                        startupError.addSuppressed(closeError);
+                    }
+                    log.warn("Failed to close Vert.x {}", reason, closeError);
+                });
+    }
+
+    private record StartupLifecycle(
+            Vertx vertx,
+            Promise<Void> startup,
+            AtomicBoolean startupTerminated,
+            AtomicBoolean closeStarted) {
     }
 }

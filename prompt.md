@@ -634,3 +634,10 @@ Entry point должен fail fast: если HTTP server не смог нача�
 5. какие тесты обновлены;
 6. результаты `npm test` и `npm run build`;
 7. есть ли сторонние изменения в рабочем дереве, не относящиеся к задаче.
+
+## Prompt 12
+Исправь слудеющие: при превышении startup timeout приложение сейчас выбрасывает ошибку, но созданный `Vertx` и продолжающийся `deployVerticle` могут остаться активными. Из-за этого зависший startup, например Liquibase, может завершиться позже и запустить HTTP-сервер уже после сообщения о неуспешном старте.
+
+Нужно сохранить lifecycle-ссылку на созданный `Vertx` и startup `Future` внутри bootstrap. При `TimeoutException` или interrupt во время `start(...)` инициировать закрытие `Vertx`, не допустить позднего successful startup и не регистрировать shutdown hook после уже зафиксированного timeout. Закрытие должно быть безопасным при гонках и не должно ломать обычный successful startup или обработку обычной startup failure.
+
+Добавь regression test с никогда не завершающимся startup и коротким тестовым timeout: тест должен подтверждать, что `start(...)` падает по timeout, `Vertx` закрывается, а отложенный HTTP-сервер не может стартовать позже. Не менять REST/WebSocket/API, бизнес-логику, PostgreSQL schema и frontend. После изменений выполнить backend tests и backend build. Git commit самостоятельно не выполнять.
