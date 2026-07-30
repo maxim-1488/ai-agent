@@ -1,6 +1,7 @@
 package ru.spb.aiagent.infrastructure.ai;
 
 import ru.spb.aiagent.application.core.AiClient;
+import ru.spb.aiagent.application.core.AiTimeoutException;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;

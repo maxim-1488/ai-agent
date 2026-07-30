@@ -1,6 +1,7 @@
 package ru.spb.aiagent.application.usecase;
 
 import ru.spb.aiagent.application.core.AiClient;
+import ru.spb.aiagent.application.core.AiTimeoutException;
 import ru.spb.aiagent.application.core.TaskEventPublisher;
 import ru.spb.aiagent.application.core.TaskEventType;
 import ru.spb.aiagent.application.core.TaskExecutionRegistry;
@@ -21,7 +22,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
-import ru.spb.aiagent.infrastructure.ai.AiTimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -70,9 +70,8 @@ class ExecuteTaskUseCaseTest {
     }
 
     @Test
-    void marksTaskTimedOutOnAiTimeout() {
-        Fixture fixture = fixture((taskId, prompt, progressCallback, cancellationToken) ->
-                Future.failedFuture(new AiTimeoutException("AI timeout")));
+    void marksTaskTimedOutWhenAlternativeAiClientReportsTimeoutContract() {
+        Fixture fixture = fixture(new TimeoutAiClient());
         Task task = fixture.createdTask();
 
         fixture.useCase.executeAsync(task);
@@ -262,6 +261,13 @@ class ExecuteTaskUseCaseTest {
         public Future<String> run(String taskId, String prompt, ProgressCallback progressCallback, CancellationToken cancelToken) {
             this.progressCallback = progressCallback;
             return result.future();
+        }
+    }
+
+    private static class TimeoutAiClient implements AiClient {
+        @Override
+        public Future<String> run(String taskId, String prompt, ProgressCallback progressCallback, CancellationToken cancelToken) {
+            return Future.failedFuture(new AiTimeoutException("AI timeout"));
         }
     }
 

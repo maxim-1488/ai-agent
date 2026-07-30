@@ -1,12 +1,12 @@
 package ru.spb.aiagent.application.usecase;
 
 import ru.spb.aiagent.application.core.AiClient;
+import ru.spb.aiagent.application.core.AiTimeoutException;
 import ru.spb.aiagent.application.core.TaskEventPublisher;
 import ru.spb.aiagent.application.core.TaskEventType;
 import ru.spb.aiagent.application.core.TaskExecutionRegistry;
 import ru.spb.aiagent.application.core.TaskRepository;
 import ru.spb.aiagent.domain.exception.TaskConflictException;
-import ru.spb.aiagent.infrastructure.ai.AiTimeoutException;
 import ru.spb.aiagent.domain.model.Task;
 import ru.spb.aiagent.domain.model.TaskStatus;
 import io.vertx.core.Future;

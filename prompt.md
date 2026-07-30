@@ -653,3 +653,16 @@ Entry point должен fail fast: если HTTP server не смог нача�
 Исправь WebSocket heartbeat: сейчас периодический timer запускается с пустым callback, поэтому сервер не отправляет protocol ping и не очищает half-open соединения. 
 Проверь `MainVerticle`, `HeartbeatService`, `TaskWebSocketHandler` и `WebSocketSubscriptionRegistry`; реализуй отправку WebSocket ping с timestamp, обработку pong, timeout для неответивших клиентов, закрытие socket и удаление всех его подписок из registry. Не меняй REST/WebSocket JSON-контракты, бизнес-логику задач, PostgreSQL schema и frontend. Добавь regression tests: клиент/socket без pong закрывается и очищает подписки, клиент/socket с pong остаётся подключённым. 
 После изменений выполни backend WebSocket tests, backend tests и backend build.
+
+## Prompt 15
+Исправь нарушение направления зависимостей в гексагональной архитектуре: `ExecuteTaskUseCase` не должен импортировать timeout-исключение из `infrastructure.ai`.
+
+Проверь текущую реализацию вокруг `ExecuteTaskUseCase`, `AiClient`, `MockAiClient` и timeout-сценариев. Если зависимость application-слоя от AI-адаптера всё ещё есть, перенеси timeout-контракт в application port/domain, например рядом с `AiClient`, и заставь AI-адаптеры маппить свои timeout-ошибки в этот application-level контракт. Application/usecase не должен знать классы из `infrastructure`.
+
+Сохрани текущий `AiClient` API и бизнес-логику статусов, если для фикса не требуется большее изменение. Timeout должен переводить задачу в `TIMED_OUT`, обычные ошибки — в `FAILED`, отмена не должна превращаться в failure. Удали или перестань использовать adapter-specific timeout type, если он больше не нужен и создаёт риск неправильного импорта.
+
+Добавь или обнови unit-тест в application-слое: альтернативная реализация `AiClient`, не зависящая от `infrastructure`, возвращает timeout-контракт, а `ExecuteTaskUseCase` выставляет `TaskStatus.TIMED_OUT` и публикует `TASK_TIMED_OUT`, не `TASK_FAILED`.
+
+Не меняй REST/WebSocket-контракты, PostgreSQL schema, frontend и unrelated бизнес-логику. 
+
+После изменений запусти backend tests/build и в конце покажи изменённые файлы и результат проверки.
