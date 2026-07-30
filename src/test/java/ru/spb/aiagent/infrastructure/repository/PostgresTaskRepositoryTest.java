@@ -109,6 +109,27 @@ class PostgresTaskRepositoryTest {
     }
 
     @Test
+    void recoveryListsAndResetsInProgressTaskWithOptimisticLocking() {
+        withRepository(repo -> {
+            Task created = await(repo.create(Task.create("client", "prompt", OffsetDateTime.now(ZoneOffset.UTC))));
+            Task inProgress = await(repo.markInProgress(created.id(), created.version()));
+
+            assertThat(await(repo.listRecoverable()))
+                    .extracting(Task::id)
+                    .contains(inProgress.id());
+
+            Task reset = await(repo.resetInProgressForRecovery(inProgress.id(), inProgress.version()));
+            assertThat(reset.status()).isEqualTo(TaskStatus.CREATED);
+            assertThat(reset.progress()).isZero();
+            assertThat(reset.startedAt()).isNull();
+
+            assertThatThrownBy(() -> await(repo.resetInProgressForRecovery(inProgress.id(), inProgress.version())))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(TaskConflictException.class);
+        });
+    }
+
+    @Test
     void concurrentCancelVsCompleteLeavesOnlyOneTerminalState() {
         withRepository(repo -> {
             Task task = await(repo.create(Task.create("client", "prompt", OffsetDateTime.now(ZoneOffset.UTC))));

@@ -636,8 +636,15 @@ Entry point должен fail fast: если HTTP server не смог нача�
 7. есть ли сторонние изменения в рабочем дереве, не относящиеся к задаче.
 
 ## Prompt 12
-Исправь слудеющие: при превышении startup timeout приложение сейчас выбрасывает ошибку, но созданный `Vertx` и продолжающийся `deployVerticle` могут остаться активными. Из-за этого зависший startup, например Liquibase, может завершиться позже и запустить HTTP-сервер уже после сообщения о неуспешном старте.
+Исправь следующие: при превышении startup timeout приложение сейчас выбрасывает ошибку, но созданный `Vertx` и продолжающийся `deployVerticle` могут остаться активными. Из-за этого зависший startup, например Liquibase, может завершиться позже и запустить HTTP-сервер уже после сообщения о неуспешном старте.
 
 Нужно сохранить lifecycle-ссылку на созданный `Vertx` и startup `Future` внутри bootstrap. При `TimeoutException` или interrupt во время `start(...)` инициировать закрытие `Vertx`, не допустить позднего successful startup и не регистрировать shutdown hook после уже зафиксированного timeout. Закрытие должно быть безопасным при гонках и не должно ломать обычный successful startup или обработку обычной startup failure.
 
 Добавь regression test с никогда не завершающимся startup и коротким тестовым timeout: тест должен подтверждать, что `start(...)` падает по timeout, `Vertx` закрывается, а отложенный HTTP-сервер не может стартовать позже. Не менять REST/WebSocket/API, бизнес-логику, PostgreSQL schema и frontend. После изменений выполнить backend tests и backend build. Git commit самостоятельно не выполнять.
+
+## Prompt 13
+Исправь следующие: после рестарта приложения незавершённые AI-задачи не должны зависать навсегда из-за пустого in-memory реестра исполнений и потерянных Vert.x timers/AI-вызовов.
+
+Проверь текущую реализацию вокруг `MainVerticle`, `ExecuteTaskUseCase`, `TaskRepository` и `PostgresTaskRepository`. Добавь startup-recovery: при старте находить сохранённые `CREATED` и `IN_PROGRESS` задачи; `CREATED` безопасно запускать повторно через существующий optimistic locking, а зависшие `IN_PROGRESS` атомарно переводить в согласованное состояние для повторного запуска или возобновлять только при наличии persisted lease. Не добавляй лишнюю схему, если текущих `status` и `version` достаточно для атомарного claim/reset.
+
+Добавь regression/integration test: остановить приложение во время выполнения задачи, запустить новый экземпляр с той же БД и проверить, что задача достигает ровно одного terminal state без двойного terminal event. Сохрани REST/WebSocket contracts, бизнес-логику cancel/client isolation и существующую state machine. Public Javadoc держать на русском. После изменений выполнить backend tests/build. Коммит не выполнять.

@@ -349,6 +349,13 @@ class ExecuteTaskUseCaseTest {
         }
 
         @Override
+        public Future<List<Task>> listRecoverable() {
+            return Future.succeededFuture(tasks.values().stream()
+                    .filter(task -> task.status() == TaskStatus.CREATED || task.status() == TaskStatus.IN_PROGRESS)
+                    .toList());
+        }
+
+        @Override
         public Future<Task> markInProgress(UUID id, long version) {
             markInProgressCount++;
             Task task = task(id);
@@ -356,6 +363,17 @@ class ExecuteTaskUseCaseTest {
                 return Future.failedFuture(new TaskConflictException("version conflict"));
             }
             Task updated = copy(task, TaskStatus.IN_PROGRESS, task.progress(), null, null);
+            tasks.put(id, updated);
+            return Future.succeededFuture(updated);
+        }
+
+        @Override
+        public Future<Task> resetInProgressForRecovery(UUID id, long version) {
+            Task task = task(id);
+            if (task.version() != version || task.status() != TaskStatus.IN_PROGRESS) {
+                return Future.failedFuture(new TaskConflictException("recovery conflict"));
+            }
+            Task updated = copy(task, TaskStatus.CREATED, 0, null, null);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }

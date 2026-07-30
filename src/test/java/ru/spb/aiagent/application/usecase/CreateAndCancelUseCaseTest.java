@@ -131,9 +131,27 @@ class CreateAndCancelUseCaseTest {
         }
 
         @Override
+        public Future<List<Task>> listRecoverable() {
+            return Future.succeededFuture(tasks.values().stream()
+                    .filter(task -> task.status() == TaskStatus.CREATED || task.status() == TaskStatus.IN_PROGRESS)
+                    .toList());
+        }
+
+        @Override
         public Future<Task> markInProgress(UUID id, long version) {
             Task t = tasks.get(id);
             Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.IN_PROGRESS, 0, null, null, t.createdAt(), t.createdAt(), null, t.createdAt(), t.version() + 1);
+            tasks.put(id, updated);
+            return Future.succeededFuture(updated);
+        }
+
+        @Override
+        public Future<Task> resetInProgressForRecovery(UUID id, long version) {
+            Task t = tasks.get(id);
+            if (t.version() != version || t.status() != TaskStatus.IN_PROGRESS) {
+                return Future.failedFuture(new TaskConflictException("recovery conflict"));
+            }
+            Task updated = new Task(t.id(), t.clientId(), t.prompt(), TaskStatus.CREATED, 0, null, null, t.createdAt(), null, null, t.createdAt(), t.version() + 1);
             tasks.put(id, updated);
             return Future.succeededFuture(updated);
         }

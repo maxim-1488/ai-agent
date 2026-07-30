@@ -5,6 +5,7 @@ import ru.spb.aiagent.domain.model.TaskFilter;
 import ru.spb.aiagent.domain.model.TaskPage;
 import ru.spb.aiagent.domain.model.TaskStatus;
 import io.vertx.core.Future;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,9 +28,19 @@ public interface TaskRepository {
     Future<TaskPage> list(String clientId, TaskFilter filter);
 
     /**
+     * Р’РѕР·РІСЂР°С‰Р°РµС‚ Р·Р°РґР°С‡Рё, РєРѕС‚РѕСЂС‹Рµ РЅСѓР¶РЅРѕ РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РїРѕСЃР»Рµ СЂРµСЃС‚Р°СЂС‚Р°.
+     */
+    Future<List<Task>> listRecoverable();
+
+    /**
      * Переводит задачу в IN_PROGRESS при совпадении version.
      */
     Future<Task> markInProgress(UUID id, long version);
+
+    /**
+     * РђС‚РѕРјР°СЂРЅРѕ РІРѕР·РІСЂР°С‰Р°РµС‚ Р·Р°РІРёСЃС€СѓСЋ IN_PROGRESS-Р·Р°РґР°С‡Сѓ РІ CREATED РїРѕ version.
+     */
+    Future<Task> resetInProgressForRecovery(UUID id, long version);
 
     /**
      * Обновляет progress без отката назад и только для нетерминальной задачи.

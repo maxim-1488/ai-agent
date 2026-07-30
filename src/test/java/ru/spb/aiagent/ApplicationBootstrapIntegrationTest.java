@@ -13,10 +13,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -66,6 +68,37 @@ class ApplicationBootstrapIntegrationTest {
         }
     }
 
+    @Test
+    void startupRecoveryCompletesTaskInterruptedByRestartOnce() throws Exception {
+        CapturingVertxFactory firstVertxFactory = new CapturingVertxFactory();
+        ApplicationBootstrap firstBootstrap = new ApplicationBootstrap(firstVertxFactory);
+        int firstPort = freePort();
+        await(firstBootstrap.startAsync(config(firstPort, 100, 5000)));
+
+        String taskId;
+        try {
+            HttpResponse<String> created = send("POST", firstPort, "/api/v1/tasks", "{\"prompt\":\"restart recovery prompt\"}");
+            assertThat(created.statusCode()).isEqualTo(201);
+            taskId = jsonString(created.body(), "id");
+            awaitStatus(firstPort, taskId, "IN_PROGRESS");
+        } finally {
+            await(firstVertxFactory.vertx.close());
+        }
+
+        CapturingVertxFactory secondVertxFactory = new CapturingVertxFactory();
+        ApplicationBootstrap secondBootstrap = new ApplicationBootstrap(secondVertxFactory);
+        int secondPort = freePort();
+        await(secondBootstrap.startAsync(config(secondPort, 5, 5000)));
+
+        try {
+            String completedBody = awaitStatus(secondPort, taskId, "COMPLETED");
+            assertThat(completedBody).contains("\"status\":\"COMPLETED\"");
+            assertThat(terminalEventCount(taskId)).isEqualTo(1);
+        } finally {
+            await(secondVertxFactory.vertx.close());
+        }
+    }
+
     private static HttpResponse<String> send(String method, int port, String path, String body) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + port + path))
@@ -81,6 +114,10 @@ class ApplicationBootstrapIntegrationTest {
     }
 
     private static AppConfig config(int httpPort) {
+        return config(httpPort, 1, 1000);
+    }
+
+    private static AppConfig config(int httpPort, int aiStepDelayMs, int aiTimeoutMs) {
         return new AppConfig(
                 httpPort,
                 new DatabaseConfig(
@@ -91,9 +128,46 @@ class ApplicationBootstrapIntegrationTest {
                         postgres.getPassword(),
                         4,
                         postgres.getJdbcUrl()),
-                1,
-                1000,
+                aiStepDelayMs,
+                aiTimeoutMs,
                 8192);
+    }
+
+    private static String awaitStatus(int port, String taskId, String expectedStatus) throws Exception {
+        AssertionError lastError = null;
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            HttpResponse<String> response = send("GET", port, "/api/v1/tasks/" + taskId, null);
+            try {
+                assertThat(response.statusCode()).isEqualTo(200);
+                assertThat(response.body()).contains("\"status\":\"" + expectedStatus + "\"");
+                return response.body();
+            } catch (AssertionError error) {
+                lastError = error;
+                Thread.sleep(50);
+            }
+        }
+        throw lastError == null ? new AssertionError("Task did not reach " + expectedStatus) : lastError;
+    }
+
+    private static String jsonString(String body, String field) {
+        var matcher = Pattern.compile("\"" + field + "\"\\s*:\\s*\"([^\"]+)\"").matcher(body);
+        if (!matcher.find()) {
+            throw new AssertionError("Missing JSON field: " + field);
+        }
+        return matcher.group(1);
+    }
+
+    private static int terminalEventCount(String taskId) throws Exception {
+        try (var conn = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+             var statement = conn.prepareStatement("SELECT count(*) FROM task_event WHERE task_id=?::uuid "
+                     + "AND type IN ('TASK_COMPLETED','TASK_FAILED','TASK_TIMED_OUT','TASK_CANCELLED')")) {
+            statement.setString(1, taskId);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
+        }
     }
 
     private static int freePort() throws IOException {

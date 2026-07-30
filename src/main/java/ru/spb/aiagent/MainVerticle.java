@@ -7,6 +7,7 @@ import ru.spb.aiagent.application.usecase.CreateTaskUseCase;
 import ru.spb.aiagent.application.usecase.ExecuteTaskUseCase;
 import ru.spb.aiagent.application.usecase.GetTaskUseCase;
 import ru.spb.aiagent.application.usecase.ListTasksUseCase;
+import ru.spb.aiagent.application.usecase.RecoverTasksOnStartupUseCase;
 import ru.spb.aiagent.infrastructure.ai.MockAiClient;
 import ru.spb.aiagent.infrastructure.ai.MockAiOptions;
 import ru.spb.aiagent.infrastructure.config.AppConfig;
@@ -109,6 +110,7 @@ public final class MainVerticle extends AbstractVerticle {
         InMemoryTaskExecutionRegistry executions = new InMemoryTaskExecutionRegistry();
         MockAiClient ai = new MockAiClient(vertx, new MockAiOptions(config.aiStepDelayMs(), config.aiTimeoutMs()));
         ExecuteTaskUseCase execute = new ExecuteTaskUseCase(repository, ai, executions, publisher);
+        RecoverTasksOnStartupUseCase recovery = new RecoverTasksOnStartupUseCase(repository, execute);
         CreateTaskUseCase create = new CreateTaskUseCase(repository, new SystemClockProvider(), execute, publisher);
         GetTaskUseCase get = new GetTaskUseCase(repository);
         ListTasksUseCase list = new ListTasksUseCase(repository);
@@ -123,11 +125,12 @@ public final class MainVerticle extends AbstractVerticle {
         log.info("Starting HTTP server: requestedPort={}, websocketMaxMessageSizeBytes={}",
                 config.httpPort(), config.websocketMaxMessageSizeBytes());
         httpServer = vertx.createHttpServer(options);
-        return httpServer.requestHandler(router)
+        return recovery.recover()
+                .compose(ignored -> httpServer.requestHandler(router)
                 .listen(config.httpPort())
                 .onSuccess(server -> log.info("HTTP server started: actualPort={}; application is ready to accept requests",
                         server.actualPort()))
-                .mapEmpty();
+                .mapEmpty());
     }
 
     private Future<Void> startHeartbeat() {

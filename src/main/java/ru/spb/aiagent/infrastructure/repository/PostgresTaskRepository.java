@@ -16,6 +16,7 @@ import io.vertx.sqlclient.Tuple;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +93,24 @@ public class PostgresTaskRepository implements TaskRepository {
     }
 
     /**
+     * Р’РѕР·РІСЂР°С‰Р°РµС‚ CREATED Рё IN_PROGRESS Р·Р°РґР°С‡Рё РґР»СЏ startup-recovery.
+     */
+    @Override
+    public Future<List<Task>> listRecoverable() {
+        log.debug("Repository list recoverable tasks");
+        return pool.preparedQuery("SELECT " + COLUMNS + " FROM ai_task "
+                        + "WHERE status IN ('CREATED','IN_PROGRESS') ORDER BY created_at, id")
+                .execute()
+                .map(rows -> {
+                    ArrayList<Task> tasks = new ArrayList<>();
+                    for (Row row : rows) {
+                        tasks.add(mapper.map(row));
+                    }
+                    return tasks;
+                });
+    }
+
+    /**
      * Переводит задачу в IN_PROGRESS с проверкой version и статуса CREATED.
      */
     @Override
@@ -101,6 +120,19 @@ public class PostgresTaskRepository implements TaskRepository {
         return pool.preparedQuery("UPDATE ai_task SET status='IN_PROGRESS', started_at=$1, updated_at=$1, version=version+1 "
                         + "WHERE id=$2 AND version=$3 AND status='CREATED' RETURNING " + COLUMNS)
                 .execute(Tuple.of(now, id, version)).map(rows -> conflictAwareOne(rows, "markInProgress", id));
+    }
+
+    /**
+     * РЎР±СЂР°СЃС‹РІР°РµС‚ Р·Р°РІРёСЃС€СѓСЋ IN_PROGRESS-Р·Р°РґР°С‡Сѓ РІ CREATED СЃ optimistic locking.
+     */
+    @Override
+    public Future<Task> resetInProgressForRecovery(UUID id, long version) {
+        log.debug("Repository reset in-progress task for recovery: taskId={}, expectedVersion={}", id, version);
+        OffsetDateTime now = now();
+        return pool.preparedQuery("UPDATE ai_task SET status='CREATED', progress=0, started_at=NULL, updated_at=$1, version=version+1 "
+                        + "WHERE id=$2 AND version=$3 AND status='IN_PROGRESS' RETURNING " + COLUMNS)
+                .execute(Tuple.of(now, id, version))
+                .map(rows -> conflictAwareOne(rows, "resetInProgressForRecovery", id));
     }
 
     /**
