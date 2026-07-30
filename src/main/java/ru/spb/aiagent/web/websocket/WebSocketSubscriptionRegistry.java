@@ -5,8 +5,13 @@ import ru.spb.aiagent.domain.model.Task;
 import ru.spb.aiagent.web.mapper.JsonMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.vertx.core.Future;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.ServerWebSocket;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -26,7 +31,20 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
     private final Map<ServerWebSocket, String> clients = new ConcurrentHashMap<>();
     private final Map<UUID, Set<ServerWebSocket>> byTask = new ConcurrentHashMap<>();
     private final Map<ServerWebSocket, Set<UUID>> bySocket = new ConcurrentHashMap<>();
+    private final Map<ServerWebSocket, HeartbeatState> heartbeats = new ConcurrentHashMap<>();
     private final ObjectMapper json = JsonMapper.create();
+    private final Clock clock;
+
+    /**
+     * Создаёт registry с системными часами.
+     */
+    public WebSocketSubscriptionRegistry() {
+        this(Clock.systemUTC());
+    }
+
+    WebSocketSubscriptionRegistry(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Регистрирует новое соединение клиента, если socket ещё открыт.
@@ -43,6 +61,8 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
         log.debug("Register WebSocket connection: clientId={}", clientId);
         clients.put(socket, clientId);
         bySocket.put(socket, ConcurrentHashMap.newKeySet());
+        heartbeats.put(socket, new HeartbeatState(0));
+        socket.pongHandler(ignored -> recordPong(socket));
         socket.closeHandler(v -> unregister(socket));
         return true;
     }
@@ -121,6 +141,7 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
             });
         }
         clients.remove(socket);
+        heartbeats.remove(socket);
         log.debug("Unregistered WebSocket connection and cleaned subscriptions: clientId={}, subscriptionCount={}",
                 clientId, tasks == null ? 0 : tasks.size());
     }
@@ -132,10 +153,11 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
         Set<ServerWebSocket> sockets;
         synchronized (this) {
             log.info("Closing WebSocket connections: count={}", clients.size());
-            sockets = new HashSet<>(clients.keySet());
+            sockets = Set.copyOf(clients.keySet());
             clients.clear();
             byTask.clear();
             bySocket.clear();
+            heartbeats.clear();
         }
         sockets.forEach(ServerWebSocket::close);
     }
@@ -191,6 +213,63 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
         return clients.containsKey(socket) && bySocket.containsKey(socket) && !socket.isClosed();
     }
 
+    /**
+     * Выполняет heartbeat-проверку всех активных WebSocket-соединений.
+     *
+     * <p>Соединения, которые не ответили pong на предыдущий ping за {@code timeoutMs}, закрываются и полностью
+     * удаляются из registry вместе с подписками. Остальным соединениям отправляется WebSocket ping с timestamp.
+     *
+     * @param timeoutMs максимальное время ожидания pong после ping в миллисекундах
+     */
+    public void heartbeat(long timeoutMs) {
+        heartbeat(clock.millis(), timeoutMs);
+    }
+
+    synchronized void heartbeat(long nowMs, long timeoutMs) {
+        Map<ServerWebSocket, Long> pings = new HashMap<>();
+        var timedOut = new ArrayList<ServerWebSocket>();
+        heartbeats.forEach((socket, state) -> {
+            if (!isActive(socket) || state.waitingForPong(nowMs, timeoutMs)) {
+                timedOut.add(socket);
+            } else if (!state.awaitingPong()) {
+                state.markPingSent(nowMs);
+                pings.put(socket, nowMs);
+            }
+        });
+        timedOut.forEach(socket -> {
+            log.warn("WebSocket heartbeat timeout, closing connection: clientId={}", clients.get(socket));
+            socket.close();
+            unregister(socket);
+        });
+        pings.forEach(this::writePing);
+    }
+
+    private void recordPong(ServerWebSocket socket) {
+        synchronized (this) {
+            HeartbeatState state = heartbeats.get(socket);
+            if (state != null) {
+                state.markPongReceived();
+            }
+        }
+    }
+
+    private void writePing(ServerWebSocket socket, long timestampMs) {
+        try {
+            Future<Void> write = socket.writePing(Buffer.buffer(Long.toString(timestampMs), StandardCharsets.UTF_8.name()));
+            if (write != null) {
+                write.onFailure(error -> {
+                    log.warn("Failed to send WebSocket heartbeat ping, closing connection: clientId={}", clients.get(socket), error);
+                    socket.close();
+                    unregister(socket);
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send WebSocket heartbeat ping, closing connection: clientId={}", clients.get(socket), e);
+            socket.close();
+            unregister(socket);
+        }
+    }
+
     boolean containsConnection(ServerWebSocket socket) {
         return clients.containsKey(socket);
     }
@@ -206,5 +285,31 @@ public class WebSocketSubscriptionRegistry implements TaskEventPublisher {
 
     int subscriberCount(UUID taskId) {
         return byTask.getOrDefault(taskId, Set.of()).size();
+    }
+
+    private static final class HeartbeatState {
+        private long lastPingAtMs;
+        private boolean awaitingPong;
+
+        private HeartbeatState(long lastPingAtMs) {
+            this.lastPingAtMs = lastPingAtMs;
+        }
+
+        private boolean awaitingPong() {
+            return awaitingPong;
+        }
+
+        private boolean waitingForPong(long nowMs, long timeoutMs) {
+            return awaitingPong() && nowMs - lastPingAtMs >= timeoutMs;
+        }
+
+        private void markPingSent(long timestampMs) {
+            lastPingAtMs = timestampMs;
+            awaitingPong = true;
+        }
+
+        private void markPongReceived() {
+            awaitingPong = false;
+        }
     }
 }

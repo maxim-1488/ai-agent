@@ -648,3 +648,8 @@ Entry point должен fail fast: если HTTP server не смог нача�
 Проверь текущую реализацию вокруг `MainVerticle`, `ExecuteTaskUseCase`, `TaskRepository` и `PostgresTaskRepository`. Добавь startup-recovery: при старте находить сохранённые `CREATED` и `IN_PROGRESS` задачи; `CREATED` безопасно запускать повторно через существующий optimistic locking, а зависшие `IN_PROGRESS` атомарно переводить в согласованное состояние для повторного запуска или возобновлять только при наличии persisted lease. Не добавляй лишнюю схему, если текущих `status` и `version` достаточно для атомарного claim/reset.
 
 Добавь regression/integration test: остановить приложение во время выполнения задачи, запустить новый экземпляр с той же БД и проверить, что задача достигает ровно одного terminal state без двойного terminal event. Сохрани REST/WebSocket contracts, бизнес-логику cancel/client isolation и существующую state machine. Public Javadoc держать на русском. После изменений выполнить backend tests/build. Коммит не выполнять.
+
+## Prompt 14
+Исправь WebSocket heartbeat: сейчас периодический timer запускается с пустым callback, поэтому сервер не отправляет protocol ping и не очищает half-open соединения. 
+Проверь `MainVerticle`, `HeartbeatService`, `TaskWebSocketHandler` и `WebSocketSubscriptionRegistry`; реализуй отправку WebSocket ping с timestamp, обработку pong, timeout для неответивших клиентов, закрытие socket и удаление всех его подписок из registry. Не меняй REST/WebSocket JSON-контракты, бизнес-логику задач, PostgreSQL schema и frontend. Добавь regression tests: клиент/socket без pong закрывается и очищает подписки, клиент/socket с pong остаётся подключённым. 
+После изменений выполни backend WebSocket tests, backend tests и backend build.

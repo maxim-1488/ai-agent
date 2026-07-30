@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class MainVerticle extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
+    private static final long WEBSOCKET_HEARTBEAT_TIMEOUT_MS = 60_000;
 
     private final AppConfig config;
     private HttpServer httpServer;
@@ -134,8 +135,8 @@ public final class MainVerticle extends AbstractVerticle {
     }
 
     private Future<Void> startHeartbeat() {
-        heartbeat.start(() -> { });
-        log.info("Heartbeat started");
+        heartbeat.start(() -> publisher.heartbeat(WEBSOCKET_HEARTBEAT_TIMEOUT_MS));
+        log.info("Heartbeat started: timeoutMs={}", WEBSOCKET_HEARTBEAT_TIMEOUT_MS);
         log.info("Application startup completed");
         return Future.succeededFuture();
     }
