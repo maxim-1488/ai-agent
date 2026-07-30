@@ -20,7 +20,8 @@ public class RouterFactory {
     public Router create(io.vertx.core.Vertx vertx, TaskRestHandler rest, TaskWebSocketHandler ws) {
         Router router = Router.router(vertx);
         router.route().handler(new CorrelationIdHandler());
-        router.route().handler(cors());
+        router.route("/api/*").handler(cors());
+        router.route("/ws/*").handler(cors());
         router.route().handler(BodyHandler.create().setHandleFileUploads(false));
         router.get("/health").handler(ok());
         router.post("/api/v1/tasks").handler(rest::create);
