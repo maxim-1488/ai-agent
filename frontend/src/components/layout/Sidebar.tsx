@@ -27,7 +27,7 @@ export function Sidebar({
     <>
       <aside className={`sidebar ${open ? 'sidebar--open' : ''}`}>
         <div className="sidebar__header">
-          <div className="sidebar__brand">ChatAI</div>
+          <div className="sidebar__brand">TaskPilot</div>
           <button type="button" className="sidebar__close" onClick={onClose} aria-label="Закрыть sidebar">×</button>
         </div>
         <button type="button" className="new-task" onClick={onNewTask}>
@@ -36,7 +36,7 @@ export function Sidebar({
               <path d="M10 4.25v11.5M4.25 10h11.5" />
             </svg>
           </span>
-          <span>Новый чат</span>
+          <span>Новая задача</span>
         </button>
         <div className="sidebar__list" aria-label="Список задач">
           {loading && <LoadingIndicator label="Загрузка задач" />}

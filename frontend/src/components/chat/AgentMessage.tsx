@@ -18,7 +18,7 @@ export function AgentMessage({ task, onCancel, cancelling }: { task: Task; onCan
 
   return (
     <article className="message message--agent">
-      <div className="message__author">ChatAI</div>
+      <div className="message__author">AI Agent</div>
       <div className="message__content">{content}</div>
     </article>
   );

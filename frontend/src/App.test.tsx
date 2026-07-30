@@ -82,7 +82,7 @@ describe('AI Agent frontend', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Чем я могу помочь?')).toBeInTheDocument();
+    expect(await screen.findByText('Какую задачу выполнить?')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Введите задание для AI...')).toBeInTheDocument();
   });
 
@@ -101,7 +101,7 @@ describe('AI Agent frontend', () => {
     expect(screen.getByText('Жду запуск…')).toBeInTheDocument();
   });
 
-  it('продолжает текущий чат до нажатия новой задачи', async () => {
+  it('продолжает текущую цепочку задач до нажатия новой задачи', async () => {
     const prompts: string[] = [];
     mockFetch((input, init) => {
       if (String(input).includes('/api/v1/tasks') && init?.method === 'POST') {
@@ -145,7 +145,7 @@ describe('AI Agent frontend', () => {
 
     act(() => socket.emit({ type: 'TASK_PROGRESS', task: { ...baseTask, status: 'IN_PROGRESS', progress: 42 } }));
 
-    expect(await screen.findByText('Собираю информацию…')).toBeInTheDocument();
+    expect(await screen.findByText('Обрабатываю задачу…')).toBeInTheDocument();
     expect(screen.queryByText('42%')).not.toBeInTheDocument();
   });
 
@@ -235,7 +235,7 @@ describe('AI Agent frontend', () => {
     act(() => MockWebSocket.instances[1].open());
     vi.useRealTimers();
 
-    expect(await screen.findByText('Собираю информацию…')).toBeInTheDocument();
+    expect(await screen.findByText('Обрабатываю задачу…')).toBeInTheDocument();
     expect(screen.queryByText('77%')).not.toBeInTheDocument();
   });
 

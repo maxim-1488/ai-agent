@@ -1,7 +1,7 @@
 export function EmptyChat() {
   return (
     <section className="empty-chat">
-      <h1>Чем я могу помочь?</h1>
+      <h1>Какую задачу выполнить?</h1>
     </section>
   );
 }

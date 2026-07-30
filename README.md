@@ -2,6 +2,8 @@
 
 Монорепозиторий по `PLAN.md`: backend на Java 21 + Vert.x, PostgreSQL + Liquibase, REST + WebSocket, mock AI execution и frontend на React + TypeScript.
 
+Проект реализует управление асинхронными AI-задачами, а не диалоговый чат-бот. Frontend использует chat-like раскладку только как удобный способ показать prompt пользователя, прогресс задачи и результат; backend не хранит conversation context и не объединяет prompt в диалоговую историю.
+
 ## Архитектура
 
 Backend разделён по гексагональной архитектуре:

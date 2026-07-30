@@ -9,58 +9,63 @@ import { useTaskWebSocket } from '../hooks/useTaskWebSocket';
 import { sanitizeBackendMessage } from '../model/apiError';
 import type { Task } from '../model/task';
 
-interface ChatSession {
+interface TaskThread {
   id: string;
   taskIds: string[];
 }
 
-function sessionsStorageKey(clientId: string): string {
+function taskThreadsStorageKey(clientId: string): string {
+  return `ai-agent.taskThreads.${clientId}`;
+}
+
+function legacyChatSessionsStorageKey(clientId: string): string {
   return `ai-agent.chatSessions.${clientId}`;
 }
 
-function loadSessions(clientId: string): ChatSession[] {
+function loadTaskThreads(clientId: string): TaskThread[] {
   try {
-    const raw = localStorage.getItem(sessionsStorageKey(clientId));
+    const raw = localStorage.getItem(taskThreadsStorageKey(clientId))
+      ?? localStorage.getItem(legacyChatSessionsStorageKey(clientId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as ChatSession[];
+    const parsed = JSON.parse(raw) as TaskThread[];
     return Array.isArray(parsed)
-      ? parsed.filter(session => session.id && Array.isArray(session.taskIds) && session.taskIds.length > 0)
+      ? parsed.filter(thread => thread.id && Array.isArray(thread.taskIds) && thread.taskIds.length > 0)
       : [];
   } catch {
     return [];
   }
 }
 
-function saveSessions(clientId: string, sessions: ChatSession[]) {
-  localStorage.setItem(sessionsStorageKey(clientId), JSON.stringify(sessions));
+function saveTaskThreads(clientId: string, threads: TaskThread[]) {
+  localStorage.setItem(taskThreadsStorageKey(clientId), JSON.stringify(threads));
 }
 
 export function ChatPage() {
   const clientId = useMemo(() => getClientId(), []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions(clientId));
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [taskThreads, setTaskThreads] = useState<TaskThread[]>(() => loadTaskThreads(clientId));
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const { tasks, loading, upsertTask, refreshTasks } = useTasks(clientId);
   const taskState = useTask(clientId, upsertTask);
   const selectedTaskId = taskState.selectedTask?.id ?? null;
   const { setSelectedTask, refreshSelectedTask, setError } = taskState;
 
   useEffect(() => {
-    saveSessions(clientId, sessions);
-  }, [clientId, sessions]);
+    saveTaskThreads(clientId, taskThreads);
+  }, [clientId, taskThreads]);
 
   const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
-  const activeSession = sessions.find(session => session.id === activeSessionId) ?? null;
-  const chatTasks = activeSession?.taskIds
+  const activeThread = taskThreads.find(thread => thread.id === activeThreadId) ?? null;
+  const threadTasks = activeThread?.taskIds
     .map(taskId => taskById.get(taskId) ?? (taskState.selectedTask?.id === taskId ? taskState.selectedTask : null))
     .filter((task): task is Task => Boolean(task)) ?? [];
 
   const sidebarTasks = useMemo(() => {
     const hiddenTaskIds = new Set<string>();
-    const taskToSession = new Map<string, ChatSession>();
-    sessions.forEach(session => {
-      session.taskIds.forEach((taskId, index) => {
-        taskToSession.set(taskId, session);
+    const taskToThread = new Map<string, TaskThread>();
+    taskThreads.forEach(thread => {
+      thread.taskIds.forEach((taskId, index) => {
+        taskToThread.set(taskId, thread);
         if (index > 0) hiddenTaskIds.add(taskId);
       });
     });
@@ -68,14 +73,14 @@ export function ChatPage() {
     return tasks
       .filter(task => !hiddenTaskIds.has(task.id))
       .map(task => {
-        const session = taskToSession.get(task.id);
-        if (!session) return task;
-        const latestTask = [...session.taskIds].reverse()
+        const thread = taskToThread.get(task.id);
+        if (!thread) return task;
+        const latestTask = [...thread.taskIds].reverse()
           .map(taskId => taskById.get(taskId))
           .find((candidate): candidate is Task => Boolean(candidate));
         return latestTask ? { ...latestTask, id: task.id, prompt: task.prompt } : task;
       });
-  }, [sessions, taskById, tasks]);
+  }, [taskThreads, taskById, tasks]);
 
   const applyRealtimeTask = useCallback((task: Task) => {
     setSelectedTask(task);
@@ -99,12 +104,12 @@ export function ChatPage() {
   });
 
   async function selectTask(taskId: string) {
-    const session = sessions.find(item => item.taskIds.includes(taskId));
-    const nextTaskIds = session?.taskIds ?? [taskId];
+    const thread = taskThreads.find(item => item.taskIds.includes(taskId));
+    const nextTaskIds = thread?.taskIds ?? [taskId];
     const latestTaskId = nextTaskIds[nextTaskIds.length - 1];
-    setActiveSessionId(session?.id ?? taskId);
-    if (!session) {
-      setSessions(current => current.some(item => item.id === taskId) ? current : [{ id: taskId, taskIds: [taskId] }, ...current]);
+    setActiveThreadId(thread?.id ?? taskId);
+    if (!thread) {
+      setTaskThreads(current => current.some(item => item.id === taskId) ? current : [{ id: taskId, taskIds: [taskId] }, ...current]);
     }
     await taskState.selectTask(latestTaskId);
     setSidebarOpen(false);
@@ -113,24 +118,24 @@ export function ChatPage() {
   async function submitPrompt(prompt: string) {
     const task = await taskState.submitPrompt(prompt);
     if (task) {
-      setActiveSessionId(currentActiveSessionId => {
-        const sessionId = currentActiveSessionId ?? task.id;
-        setSessions(current => {
-          const existing = current.find(session => session.id === sessionId);
-          if (!existing) return [{ id: sessionId, taskIds: [task.id] }, ...current];
+      setActiveThreadId(currentActiveThreadId => {
+        const threadId = currentActiveThreadId ?? task.id;
+        setTaskThreads(current => {
+          const existing = current.find(thread => thread.id === threadId);
+          if (!existing) return [{ id: threadId, taskIds: [task.id] }, ...current];
           if (existing.taskIds.includes(task.id)) return current;
-          return current.map(session => session.id === sessionId
-            ? { ...session, taskIds: [...session.taskIds, task.id] }
-            : session);
+          return current.map(thread => thread.id === threadId
+            ? { ...thread, taskIds: [...thread.taskIds, task.id] }
+            : thread);
         });
-        return sessionId;
+        return threadId;
       });
     }
     return Boolean(task);
   }
 
   function newTask() {
-    setActiveSessionId(null);
+    setActiveThreadId(null);
     setSelectedTask(null);
     setSidebarOpen(false);
   }
@@ -143,7 +148,7 @@ export function ChatPage() {
         <Sidebar
           tasks={sidebarTasks}
           loading={loading}
-          activeTaskId={activeSession?.taskIds[0] ?? selectedTaskId}
+          activeTaskId={activeThread?.taskIds[0] ?? selectedTaskId}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onNewTask={newTask}
@@ -152,7 +157,7 @@ export function ChatPage() {
       }
     >
       <ChatView
-        tasks={chatTasks}
+        tasks={threadTasks}
         creating={taskState.creating}
         cancelling={taskState.cancelling}
         apiError={taskState.error}

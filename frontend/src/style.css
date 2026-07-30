@@ -68,15 +68,18 @@ textarea:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  min-height: 42px;
+  margin-bottom: 14px;
 }
 
 .sidebar__brand {
+  display: block;
+  padding-bottom: 2px;
   font-family: "SF Pro Rounded", "Avenir Next", Inter, ui-rounded, system-ui, sans-serif;
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.055em;
-  line-height: 1;
+  line-height: 1.15;
   color: transparent;
   background: linear-gradient(135deg, #101113 10%, #555d68 52%, #111318 92%);
   -webkit-background-clip: text;
