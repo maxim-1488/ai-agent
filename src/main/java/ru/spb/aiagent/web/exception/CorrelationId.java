@@ -4,9 +4,9 @@ package ru.spb.aiagent.web.exception;
  * Имя header/context поля correlation id.
  */
 public final class CorrelationId {
-    /** Header correlation id. */
+    /** Имя HTTP header для correlation id. */
     public static final String HEADER = "X-Correlation-Id";
-    /** RoutingContext key correlation id. */
+    /** Ключ correlation id в RoutingContext. */
     public static final String KEY = "correlationId";
 
     private CorrelationId() {

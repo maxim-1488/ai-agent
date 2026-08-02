@@ -28,7 +28,7 @@ public interface TaskRepository {
     Future<TaskPage> list(String clientId, TaskFilter filter);
 
     /**
-     * Р’РѕР·РІСЂР°С‰Р°РµС‚ Р·Р°РґР°С‡Рё, РєРѕС‚РѕСЂС‹Рµ РЅСѓР¶РЅРѕ РІРѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РїРѕСЃР»Рµ СЂРµСЃС‚Р°СЂС‚Р°.
+     * Возвращает задачи, которые нужно восстановить после рестарта.
      */
     Future<List<Task>> listRecoverable();
 
@@ -38,7 +38,7 @@ public interface TaskRepository {
     Future<Task> markInProgress(UUID id, long version);
 
     /**
-     * РђС‚РѕРјР°СЂРЅРѕ РІРѕР·РІСЂР°С‰Р°РµС‚ Р·Р°РІРёСЃС€СѓСЋ IN_PROGRESS-Р·Р°РґР°С‡Сѓ РІ CREATED РїРѕ version.
+     * Атомарно возвращает зависшую IN_PROGRESS-задачу в CREATED по version.
      */
     Future<Task> resetInProgressForRecovery(UUID id, long version);
 

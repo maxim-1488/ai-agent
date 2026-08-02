@@ -96,7 +96,7 @@ public class PostgresTaskRepository implements TaskRepository {
     }
 
     /**
-     * Р’РѕР·РІСЂР°С‰Р°РµС‚ CREATED Рё IN_PROGRESS Р·Р°РґР°С‡Рё РґР»СЏ startup-recovery.
+     * Возвращает CREATED и IN_PROGRESS задачи для startup-recovery.
      */
     @Override
     public Future<List<Task>> listRecoverable() {
@@ -126,7 +126,7 @@ public class PostgresTaskRepository implements TaskRepository {
     }
 
     /**
-     * РЎР±СЂР°СЃС‹РІР°РµС‚ Р·Р°РІРёСЃС€СѓСЋ IN_PROGRESS-Р·Р°РґР°С‡Сѓ РІ CREATED СЃ optimistic locking.
+     * Сбрасывает зависшую IN_PROGRESS-задачу в CREATED с optimistic locking.
      */
     @Override
     public Future<Task> resetInProgressForRecovery(UUID id, long version) {
