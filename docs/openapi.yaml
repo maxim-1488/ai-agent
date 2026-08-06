@@ -1,0 +1,349 @@
+openapi: 3.0.3
+info:
+  title: AI Agent API
+  version: 1.0.0
+  description: REST contract for asynchronous AI task management.
+servers:
+  - url: http://localhost:8080
+    description: Local backend
+security: []
+tags:
+  - name: System
+    description: Service availability endpoints.
+  - name: Tasks
+    description: Asynchronous task lifecycle operations.
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Check service health
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/tasks:
+    post:
+      tags: [Tasks]
+      summary: Create an asynchronous task
+      operationId: createTask
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [Tasks]
+      summary: List tasks owned by the client
+      operationId: listTasks
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/TaskStatus"
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, status, progress]
+            default: createdAt
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [ASC, DESC]
+            default: DESC
+      responses:
+        "200":
+          description: Page of client tasks.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskList"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/tasks/{taskId}:
+    get:
+      tags: [Tasks]
+      summary: Get a task owned by the client
+      operationId: getTask
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/ClientId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current task state.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/tasks/{taskId}/cancel:
+    post:
+      tags: [Tasks]
+      summary: Cancel a task owned by the client
+      operationId: cancelTask
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/ClientId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Cancelled task state.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  parameters:
+    ClientId:
+      name: X-Client-Id
+      in: header
+      required: true
+      description: Demonstration client identifier used to isolate task ownership.
+      schema:
+        type: string
+        minLength: 1
+      example: client-123
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Optional request correlation identifier. The server generates one when omitted.
+      schema:
+        type: string
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  headers:
+    CorrelationId:
+      description: Correlation identifier assigned to the request.
+      schema:
+        type: string
+  responses:
+    ValidationError:
+      description: Request validation failed.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFoundError:
+      description: Task was not found for this client.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ConflictError:
+      description: Task state does not allow the requested operation.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Unexpected server error.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [UP]
+    CreateTaskRequest:
+      type: object
+      required: [prompt]
+      additionalProperties: false
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    TaskStatus:
+      type: string
+      enum: [CREATED, IN_PROGRESS, COMPLETED, FAILED, CANCELLED, TIMED_OUT]
+    Task:
+      type: object
+      required:
+        - id
+        - prompt
+        - status
+        - progress
+        - createdAt
+        - updatedAt
+        - version
+        - taskUrl
+        - webSocketUrl
+      properties:
+        id:
+          type: string
+          format: uuid
+        prompt:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        result:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        taskUrl:
+          type: string
+          example: /api/v1/tasks/9e9d74ad-8120-4f30-8ae6-79b28c6d9377
+        webSocketUrl:
+          type: string
+          example: /ws/tasks
+    TaskList:
+      type: object
+      required: [items, total, page, size]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+    ErrorDetail:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+    Error:
+      type: object
+      required: [errorCode, message, correlationId, details, timestamp]
+      properties:
+        errorCode:
+          type: string
+          enum: [VALIDATION_ERROR, NOT_FOUND, CONFLICT, INTERNAL_ERROR]
+        message:
+          type: string
+        correlationId:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+        timestamp:
+          type: string
+          format: date-time
+x-websocket:
+  url: /ws/tasks
+  description: >-
+    WebSocket handshake accepts X-Client-Id or the clientId query parameter.
+    Client actions are SUBSCRIBE, UNSUBSCRIBE and PING. Server event types are
+    TASK_CREATED, TASK_STARTED, TASK_PROGRESS, TASK_COMPLETED, TASK_FAILED,
+    TASK_CANCELLED, SUBSCRIBED, UNSUBSCRIBED, ERROR and PONG.

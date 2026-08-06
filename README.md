@@ -25,6 +25,8 @@ Backend разделён по гексагональной архитектур�
 - `AI_STEP_DELAY_MS`, `AI_TIMEOUT_MS`
 - `WEBSOCKET_MAX_MESSAGE_SIZE_BYTES`, default `8192`. Ограничивает входящие WebSocket-сообщения `client -> WebSocket server` в байтах; это не лимит AI prompt.
 
+Безопасный шаблон локальной конфигурации находится в `.env.example`.
+
 ## Локальный backend
 
 Нужен PostgreSQL с БД `ai_agent` и пользователем `ai_agent`.
@@ -43,7 +45,7 @@ Frontend находится в `frontend` и реализован на React + T
 
 Требования:
 
-- Node.js 20+;
+- Node.js 20.19+;
 - npm 10+;
 - запущенный backend на `http://localhost:8080` для реальной REST/WebSocket-интеграции.
 
@@ -51,7 +53,7 @@ Frontend находится в `frontend` и реализован на React + T
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm test
 npm run build
 ```
@@ -68,7 +70,7 @@ npm run dev
 - `/api` -> `http://localhost:8080`;
 - `/ws` -> `ws://localhost:8080`.
 
-Переменные окружения frontend задаются через `.env` по примеру `frontend/.env.application`:
+Переменные окружения frontend задаются через `.env` по примеру `frontend/.env.example`:
 
 ```bash
 VITE_BACKEND_URL=http://localhost:8080
@@ -127,6 +129,12 @@ curl -H "X-Client-Id: client-123" http://localhost:8080/api/v1/tasks
 ```bash
 curl -X POST -H "X-Client-Id: client-123" http://localhost:8080/api/v1/tasks/{taskId}/cancel
 ```
+
+Формальный REST-контракт находится в `docs/openapi.yaml` (OpenAPI 3.0.3). Его можно импортировать в Swagger Editor, Postman или генератор API-клиента.
+
+## CI
+
+GitHub Actions workflow `.github/workflows/ci.yml` запускается для pull request, push в `main` и вручную. Backend job выполняет `./gradlew check` на Java 21, frontend job выполняет `npm ci`, `npm test` и `npm run build` на Node.js 20.19.
 
 ## WebSocket
 
