@@ -6,6 +6,15 @@ build/
 .kotlin
 .explyt
 .env
+.env.*
+!.env.example
+!frontend/.env.example
+file-uploads/
+
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
